@@ -1,2065 +1,93 @@
-'use client';
-import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
-import {
-  ArrowRight,
-  BookOpen,
-  ChevronRight,
-  Copy,
-  CreditCard,
-  Download,
-  ExternalLink,
-  Eye,
-  EyeOff,
-  FileSpreadsheet,
-  KeyRound,
-  Lock,
-  Package,
-  Palette,
-  Plus,
-  RefreshCw,
-  Save,
-  Search,
-  ShieldCheck,
-  Sparkles,
-  Tag,
-  Trash2,
-  Truck,
-  Upload,
-  Wrench,
-  X,
-} from 'lucide-react';
-import {
-  money,
-  presets,
-  type Booking,
-  type Config,
-  type Order,
-  type PresetKey,
-  type Product,
-  type Service,
-  type ThemeKey,
-} from '@/lib/shinslot';
-import { getActiveConfig } from '@/lib/site-config';
-import '../app/admin/admin.css';
-import BookingCalendar from '../app/admin/booking-calendar';
-
-function parseAddOns(val: unknown): string[] {
-  if (Array.isArray(val)) return val;
-  if (typeof val === 'string') {
-    try {
-      const res = JSON.parse(val);
-      if (Array.isArray(res)) return res;
-    } catch {}
-  }
-  return [];
-}
-
-type Tab =
-  | 'overview'
-  | 'presets'
-  | 'products'
-  | 'services'
-  | 'orders'
-  | 'bookings'
-  | 'design'
-  | 'contacts'
-  | 'payments'
-  | 'security'
-  | 'guide';
-
-const presetList: {
-  key: PresetKey;
-  title: string;
-  subtitle: string;
-  icon: string;
-  count: number;
-  themeName: string;
-  type: string;
-}[] = [
-  { key: 'shop', title: 'Ð˜Ð½Ñ‚ÐµÑ€Ð½ÐµÑ‚-Ð¼Ð°Ð³Ð°Ð·Ð¸Ð½ & Ð¨Ð¾ÑƒÑ€ÑƒÐ¼', subtitle: 'ÐžÐ´ÐµÐ¶Ð´Ð°, ÐºÐ¾ÑÐ¼ÐµÑ‚Ð¸ÐºÐ°, Ñ‚Ñ€ÐµÐ½Ð´Ð¾Ð²Ñ‹Ðµ Ñ‚Ð¾Ð²Ð°Ñ€Ñ‹, ÐºÐ¾Ñ€Ð·Ð¸Ð½Ð° Ð¸ Ð¾Ð½Ð»Ð°Ð¹Ð½-Ð¾Ð¿Ð»Ð°Ñ‚Ð°', icon: 'ðŸ›', count: 6, themeName: 'Ð“Ñ€Ð°Ñ„Ð¸Ñ‚ & Ð—Ð¾Ð»Ð¾Ñ‚Ð¾', type: 'ÐœÐ°Ð³Ð°Ð·Ð¸Ð½' },
-  { key: 'car_dealership', title: 'ÐÐ²Ñ‚Ð¾ÑÐ°Ð»Ð¾Ð½ & Ð”ÐµÑ‚ÐµÐ¹Ð»Ð¸Ð½Ð³', subtitle: 'ÐÐ²Ñ‚Ð¾ Ð² Ð½Ð°Ð»Ð¸Ñ‡Ð¸Ð¸, Ñ‚ÐµÑÑ‚-Ð´Ñ€Ð°Ð¹Ð², Ñ‚Ñ€ÐµÐ¹Ð´-Ð¸Ð½, Ð°Ð²Ñ‚Ð¾Ñ…Ð¸Ð¼Ð¸Ñ Ð¸ Ð´Ð¾Ð¾ÑÐ½Ð°Ñ‰ÐµÐ½Ð¸Ðµ', icon: 'ðŸŽ', count: 5, themeName: 'Ð˜Ð½Ð´Ð¸Ð³Ð¾ & Ð¡Ð¸Ð½Ð¸Ð¹', type: 'Ð“Ð¸Ð±Ñ€Ð¸Ð´' },
-  { key: 'barbershop', title: 'Ð‘Ð°Ñ€Ð±ÐµÑ€ÑˆÐ¾Ð¿ Ð¸ Ð¼ÑƒÐ¶ÑÐºÐ¸Ðµ ÑÑ‚Ñ€Ð¸Ð¶ÐºÐ¸', subtitle: 'Ð¡Ñ‚Ñ€Ð¸Ð¶ÐºÐ¸, Ð±Ð¾Ñ€Ð¾Ð´Ð°, ÐºÐ¾Ñ€Ð¾Ð»ÐµÐ²ÑÐºÐ¾Ðµ Ð±Ñ€Ð¸Ñ‚ÑŒÑ‘ Ð¸ Ð¼ÑƒÐ¶ÑÐºÐ°Ñ ÐºÐ¾ÑÐ¼ÐµÑ‚Ð¸ÐºÐ°', icon: 'ðŸ’ˆ', count: 6, themeName: 'Ð“Ñ€Ð°Ñ„Ð¸Ñ‚ & Ð—Ð¾Ð»Ð¾Ñ‚Ð¾', type: 'Ð“Ð¸Ð±Ñ€Ð¸Ð´' },
-  { key: 'massage', title: 'Ð¡Ñ‚ÑƒÐ´Ð¸Ñ Ð¼Ð°ÑÑÐ°Ð¶Ð° & Ð¡Ð¿Ð°', subtitle: 'Ð ÐµÐ»Ð°ÐºÑ, Ð¾Ð·Ð´Ð¾Ñ€Ð¾Ð²Ð¸Ñ‚ÐµÐ»ÑŒÐ½Ñ‹Ð¹ Ð¼Ð°ÑÑÐ°Ð¶, ÑÐ¿Ð°-Ð¿Ñ€Ð¾Ð³Ñ€Ð°Ð¼Ð¼Ñ‹', icon: 'ðŸ’†', count: 6, themeName: 'Ð˜Ð·ÑƒÐ¼Ñ€ÑƒÐ´ & Ð—ÐµÐ»Ñ‘Ð½Ñ‹Ð¹', type: 'Ð£ÑÐ»ÑƒÐ³Ð¸' },
-  { key: 'beauty', title: 'Ð¡Ð°Ð»Ð¾Ð½ ÐºÑ€Ð°ÑÐ¾Ñ‚Ñ‹ & Ð‘ÑŒÑŽÑ‚Ð¸', subtitle: 'Ð¡Ñ‚Ñ€Ð¸Ð¶ÐºÐ¸, Ð¾ÐºÑ€Ð°ÑˆÐ¸Ð²Ð°Ð½Ð¸Ðµ, Ð¼Ð°Ð½Ð¸ÐºÑŽÑ€, Ð±Ñ€Ð¾Ð²Ð¸ Ð¸ ÑƒÑ…Ð¾Ð´Ð¾Ð²Ð°Ñ ÐºÐ¾ÑÐ¼ÐµÑ‚Ð¸ÐºÐ°', icon: 'ðŸ’…', count: 6, themeName: 'ÐÐ¼Ð±ÐµÑ€ & Ð Ð¾Ð·Ð¾Ð²Ñ‹Ð¹', type: 'Ð“Ð¸Ð±Ñ€Ð¸Ð´' },
-  { key: 'auto', title: 'ÐÐ²Ñ‚Ð¾ÑÐµÑ€Ð²Ð¸Ñ & Ð¨Ð¸Ð½Ð¾Ð¼Ð¾Ð½Ñ‚Ð°Ð¶', subtitle: 'Ð¨Ð¸Ð½Ð¾Ð¼Ð¾Ð½Ñ‚Ð°Ð¶, Ð¢Ðž, Ð¿Ð¾Ð»Ð¸Ñ€Ð¾Ð²ÐºÐ°, Ð¼Ð°ÑÐ»Ð° Ð¸ Ð°Ð²Ñ‚Ð¾Ð·Ð°Ð¿Ñ‡Ð°ÑÑ‚Ð¸', icon: 'ðŸš—', count: 6, themeName: 'Ð˜Ð½Ð´Ð¸Ð³Ð¾ & Ð¡Ð¸Ð½Ð¸Ð¹', type: 'Ð“Ð¸Ð±Ñ€Ð¸Ð´' },
-  { key: 'custom', title: 'Ð§Ð°ÑÑ‚Ð½Ñ‹Ð¹ Ð¼Ð°ÑÑ‚ÐµÑ€ / Ð­ÐºÑÐ¿ÐµÑ€Ñ‚', subtitle: 'Ð˜Ð½Ð´Ð¸Ð²Ð¸Ð´ÑƒÐ°Ð»ÑŒÐ½Ñ‹Ðµ ÐºÐ¾Ð½ÑÑƒÐ»ÑŒÑ‚Ð°Ñ†Ð¸Ð¸, ÐºÐ¾ÑƒÑ‡Ð¸Ð½Ð³ Ð¸ Ð»Ð¸Ñ‡Ð½Ñ‹Ð¹ Ð¿Ñ€Ð¸Ñ‘Ð¼', icon: 'ðŸ’¼', count: 5, themeName: 'Ð˜Ð½Ð´Ð¸Ð³Ð¾ & Ð¡Ð¸Ð½Ð¸Ð¹', type: 'Ð£ÑÐ»ÑƒÐ³Ð¸' },
-  { key: 'photo', title: 'Ð¤Ð¾Ñ‚Ð¾ÑÑ‚ÑƒÐ´Ð¸Ñ & ÐŸÑ€Ð¾Ð´Ð°ÐºÑˆÐ½', subtitle: 'ÐÑ€ÐµÐ½Ð´Ð° Ð·Ð°Ð»Ð¾Ð², Ñ†Ð¸ÐºÐ»Ð¾Ñ€Ð°Ð¼Ð°, Ñ„Ð¾Ñ‚Ð¾ÑÐµÑÑÐ¸Ð¸ Ð¿Ð¾Ð´ ÐºÐ»ÑŽÑ‡', icon: 'ðŸ“¸', count: 5, themeName: 'Ð“Ñ€Ð°Ñ„Ð¸Ñ‚ & Ð—Ð¾Ð»Ð¾Ñ‚Ð¾', type: 'Ð“Ð¸Ð±Ñ€Ð¸Ð´' },
-  { key: 'fitness', title: 'Ð¤Ð¸Ñ‚Ð½ÐµÑ & ÐŸÐµÑ€ÑÐ¾Ð½Ð°Ð»ÑŒÐ½Ñ‹Ð¹ Ñ‚Ñ€ÐµÐ½ÐµÑ€', subtitle: 'Ð¢Ñ€ÐµÐ½Ð¸Ñ€Ð¾Ð²ÐºÐ¸, Ð¹Ð¾Ð³Ð°, ÑÑ‚Ñ€ÐµÑ‚Ñ‡Ð¸Ð½Ð³ Ð¸ ÑÐ¿Ð¾Ñ€Ñ‚Ð¸Ð²Ð½Ð¾Ðµ Ð¿Ð¸Ñ‚Ð°Ð½Ð¸Ðµ', icon: 'ðŸ§˜', count: 5, themeName: 'ÐžÐºÐµÐ°Ð½ & Ð‘Ð¸Ñ€ÑŽÐ·Ð°', type: 'Ð“Ð¸Ð±Ñ€Ð¸Ð´' },
-  { key: 'medical', title: 'ÐšÐ»Ð¸Ð½Ð¸ÐºÐ° & Ð¡Ñ‚Ð¾Ð¼Ð°Ñ‚Ð¾Ð»Ð¾Ð³Ð¸Ñ', subtitle: 'ÐšÐ¾Ð½ÑÑƒÐ»ÑŒÑ‚Ð°Ñ†Ð¸Ð¸ Ð²Ñ€Ð°Ñ‡ÐµÐ¹, Ð³Ð¸Ð³Ð¸ÐµÐ½Ð°, Ð´Ð¸Ð°Ð³Ð½Ð¾ÑÑ‚Ð¸ÐºÐ° Ð±ÐµÐ· Ð±Ð¾Ð»Ð¸', icon: 'ðŸ¦·', count: 5, themeName: 'Ð§Ð¸ÑÑ‚Ñ‹Ð¹ ÑÐ²ÐµÑ‚Ð»Ñ‹Ð¹', type: 'Ð£ÑÐ»ÑƒÐ³Ð¸' },
-  { key: 'tattoo', title: 'Ð¢Ð°Ñ‚Ñƒ-ÑÑ‚ÑƒÐ´Ð¸Ñ & ÐŸÐ¸Ñ€ÑÐ¸Ð½Ð³', subtitle: 'ÐÐ²Ñ‚Ð¾Ñ€ÑÐºÐ¸Ðµ ÑÑÐºÐ¸Ð·Ñ‹, ÑÐµÐ°Ð½ÑÑ‹ Ñ‚Ð°Ñ‚Ñƒ, Ð¿Ð¸Ñ€ÑÐ¸Ð½Ð³', icon: 'ðŸŽ¨', count: 5, themeName: 'Ð ÑƒÐ±Ð¸Ð½ & Ð‘Ð¾Ñ€Ð´Ð¾', type: 'Ð£ÑÐ»ÑƒÐ³Ð¸' },
-  { key: 'cleaning', title: 'ÐšÐ»Ð¸Ð½Ð¸Ð½Ð³ & Ð¥Ð¸Ð¼Ñ‡Ð¸ÑÑ‚ÐºÐ°', subtitle: 'Ð“ÐµÐ½ÐµÑ€Ð°Ð»ÑŒÐ½Ð°Ñ ÑƒÐ±Ð¾Ñ€ÐºÐ° ÐºÐ²Ð°Ñ€Ñ‚Ð¸Ñ€, Ð´Ð¸Ð²Ð°Ð½Ñ‹, Ð¼Ð¾Ð¹ÐºÐ° Ð¾ÐºÐ¾Ð½', icon: 'ðŸ§¹', count: 5, themeName: 'ÐÐµÐ¾Ð½ & Ð¤Ð¸Ð¾Ð»ÐµÑ‚Ð¾Ð²Ñ‹Ð¹', type: 'Ð£ÑÐ»ÑƒÐ³Ð¸' },
-];
-
-const photoPresets: { title: string; niche: string; url: string }[] = [
-  { title: 'ÐœÐ°Ð³Ð°Ð·Ð¸Ð½ Ð¾Ð´ÐµÐ¶Ð´Ñ‹', niche: 'Ð¨Ð¾Ð¿Ð¸Ð½Ð³', url: 'https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&w=1200&q=80' },
-  { title: 'ÐÐ²Ñ‚Ð¾ÑÐ°Ð»Ð¾Ð½ Ð¿Ñ€ÐµÐ¼Ð¸ÑƒÐ¼', niche: 'ÐÐ²Ñ‚Ð¾', url: 'https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=1200&q=80' },
-  { title: 'Ð‘Ð°Ñ€Ð±ÐµÑ€ÑˆÐ¾Ð¿', niche: 'Ð¡Ñ‚Ñ€Ð¸Ð¶ÐºÐ¸', url: 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=1200&q=80' },
-  { title: 'ÐœÐ°ÑÑÐ°Ð¶ & Ð¡Ð¿Ð°', niche: 'Ð¡Ð¿Ð°', url: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?auto=format&fit=crop&w=1200&q=80' },
-  { title: 'Ð¡Ð°Ð»Ð¾Ð½ ÐºÑ€Ð°ÑÐ¾Ñ‚Ñ‹', niche: 'Ð‘ÑŒÑŽÑ‚Ð¸', url: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=1200&q=80' },
-  { title: 'ÐÐ²Ñ‚Ð¾ÑÐµÑ€Ð²Ð¸Ñ', niche: 'ÐÐ²Ñ‚Ð¾', url: 'https://images.unsplash.com/photo-1613214149922-f1809c99b414?auto=format&fit=crop&w=1200&q=80' },
-  { title: 'ÐžÑ„Ð¸Ñ & Ð¡Ñ‚ÑƒÐ´Ð¸Ñ', niche: 'Ð‘Ð¸Ð·Ð½ÐµÑ', url: 'https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=1200&q=80' },
-  { title: 'Ð¤Ð¾Ñ‚Ð¾ÑÑ‚ÑƒÐ´Ð¸Ñ', niche: 'Ð¤Ð¾Ñ‚Ð¾', url: 'https://images.unsplash.com/photo-1527011046414-4781f1f94f8c?auto=format&fit=crop&w=1200&q=80' },
-  { title: 'Ð¤Ð¸Ñ‚Ð½ÐµÑ & Ð™Ð¾Ð³Ð°', niche: 'Ð¡Ð¿Ð¾Ñ€Ñ‚', url: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?auto=format&fit=crop&w=1200&q=80' },
-  { title: 'ÐšÐ»Ð¸Ð½Ð¸ÐºÐ° & Ð”Ð¾ÐºÑ‚Ð¾Ñ€', niche: 'ÐœÐµÐ´Ð¸Ñ†Ð¸Ð½Ð°', url: 'https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=1200&q=80' },
-];
-
-const themeSwatches: { key: ThemeKey; title: string; desc: string; accentColor: string; bgColor: string }[] = [
-  { key: 'graphite', title: 'Ð“Ñ€Ð°Ñ„Ð¸Ñ‚ & Ð—Ð¾Ð»Ð¾Ñ‚Ð¾', desc: 'ÐŸÑ€ÐµÐ¼Ð¸ÑƒÐ¼, Ð±Ð°Ñ€Ð±ÐµÑ€ÑˆÐ¾Ð¿Ñ‹, Ñ‚Ð°Ñ‚Ñƒ, Ð±ÑƒÑ‚Ð¸ÐºÐ¸', accentColor: '#e5aa42', bgColor: '#0b0c0e' },
-  { key: 'navy', title: 'Ð˜Ð½Ð´Ð¸Ð³Ð¾ & Ð¡Ð¸Ð½Ð¸Ð¹', desc: 'ÐÐ²Ñ‚Ð¾ÑÐ°Ð»Ð¾Ð½Ñ‹, Ð°Ð²Ñ‚Ð¾ÑÐµÑ€Ð²Ð¸Ñ, Ñ‚ÐµÑ…Ð½Ð¾Ð»Ð¾Ð³Ð¸Ð¸', accentColor: '#4fa0ff', bgColor: '#050911' },
-  { key: 'emerald', title: 'Ð˜Ð·ÑƒÐ¼Ñ€ÑƒÐ´ & ÐœÑÑ‚Ð°', desc: 'Ð¡Ð¿Ð°, Ð¼Ð°ÑÑÐ°Ð¶, Ð·Ð´Ð¾Ñ€Ð¾Ð²ÑŒÐµ, ÑÐºÐ¾', accentColor: '#37d692', bgColor: '#06110c' },
-  { key: 'amber', title: 'ÐÐ¼Ð±ÐµÑ€ & Ð Ð¾Ð·Ð¾Ð²Ñ‹Ð¹', desc: 'Ð¡Ð°Ð»Ð¾Ð½Ñ‹ ÐºÑ€Ð°ÑÐ¾Ñ‚Ñ‹, Ð¼Ð°ÐºÐ¸ÑÐ¶, Ð¼Ð¾Ð´Ð°', accentColor: '#f0956b', bgColor: '#0f0a0d' },
-  { key: 'ruby', title: 'Ð ÑƒÐ±Ð¸Ð½ & Ð‘Ð¾Ñ€Ð´Ð¾', desc: 'Ð­Ð»Ð¸Ñ‚Ð½Ñ‹Ðµ ÑÑ‚ÑƒÐ´Ð¸Ð¸, Ð·Ð°ÐºÑ€Ñ‹Ñ‚Ñ‹Ðµ ÐºÐ»ÑƒÐ±Ñ‹', accentColor: '#e11d48', bgColor: '#0c0507' },
-  { key: 'violet', title: 'ÐÐµÐ¾Ð½ & Ð¤Ð¸Ð¾Ð»ÐµÑ‚Ð¾Ð²Ñ‹Ð¹', desc: 'ÐšÐ»Ð¸Ð½Ð¸Ð½Ð³, Ñ‚Ð²Ð¾Ñ€Ñ‡ÐµÑÑ‚Ð²Ð¾, Ð¼Ð¾Ð»Ð¾Ð´ÐµÐ¶ÑŒ', accentColor: '#a855f7', bgColor: '#090612' },
-  { key: 'cyan', title: 'ÐžÐºÐµÐ°Ð½ & Ð‘Ð¸Ñ€ÑŽÐ·Ð°', desc: 'Ð¤Ð¸Ñ‚Ð½ÐµÑ, Ð¹Ð¾Ð³Ð°, ÑÐ¿Ð¾Ñ€Ñ‚, Ð±Ð°ÑÑÐµÐ¹Ð½Ñ‹', accentColor: '#06b6d4', bgColor: '#040d12' },
-  { key: 'light', title: 'Ð¡Ð²ÐµÑ‚Ð»Ð°Ñ Ð¼Ð¸Ð½Ð¸Ð¼Ð°Ð»Ð¸ÑÑ‚Ð¸Ñ‡Ð½Ð°Ñ', desc: 'ÐšÐ»Ð¸Ð½Ð¸ÐºÐ¸, ÑÑ‚Ð¾Ð¼Ð°Ñ‚Ð¾Ð»Ð¾Ð³Ð¸Ð¸, ÑÑ‚ÑƒÐ´Ð¸Ð¸', accentColor: '#1e5fe8', bgColor: '#f5f5f1' },
-];
-
-const quickPaletteColors = [
-  { label: 'Ð—Ð¾Ð»Ð¾Ñ‚Ð¾Ð¹', hex: '#e5aa42' },
-  { label: 'Ð¡Ð¸Ð½Ð¸Ð¹', hex: '#3b82f6' },
-  { label: 'Ð˜Ð·ÑƒÐ¼Ñ€ÑƒÐ´', hex: '#10b981' },
-  { label: 'Ð ÑƒÐ±Ð¸Ð½', hex: '#e11d48' },
-  { label: 'Ð¤Ð¸Ð¾Ð»ÐµÑ‚Ð¾Ð²Ñ‹Ð¹', hex: '#8b5cf6' },
-  { label: 'Ð‘Ð¸Ñ€ÑŽÐ·Ð¾Ð²Ñ‹Ð¹', hex: '#06b6d4' },
-  { label: 'ÐžÑ€Ð°Ð½Ð¶ÐµÐ²Ñ‹Ð¹', hex: '#f97316' },
-  { label: 'Ð‘ÐµÐ»Ñ‹Ð¹', hex: '#ffffff' },
-];
-
-export type AdminDashboardProps = {
-  onExit?: () => void;
-  initialTab?: Tab;
-  onConfigChange?: (c: Config) => void;
-};
-
-export default function AdminDashboard({ onExit, initialTab = 'overview', onConfigChange }: AdminDashboardProps) {
-  const [config, setConfig] = useState<Config>(getActiveConfig());
-  const [bookings, setBookings] = useState<Booking[]>([]);
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [tab, setTab] = useState<Tab>(initialTab);
-  const [saving, setSaving] = useState(false);
-  const [notice, setNotice] = useState('');
-  const [hasChanges, setHasChanges] = useState(false);
-
-  // Authentication State (default password: 12345)
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
-    try {
-      return sessionStorage.getItem('admin_authenticated') === 'true';
-    } catch {
-      return false;
-    }
-  });
-  const [passwordInput, setPasswordInput] = useState('');
-  const [passwordError, setPasswordError] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-
-  // Role: 'client' (buyer of the template) vs 'developer' (creator / agency)
-  const [role, setRole] = useState<'client' | 'developer'>('client');
-
-  function handleLogin(e: React.FormEvent) {
-    e.preventDefault();
-    const correctPassword = config.adminPassword || '12345';
-    if (passwordInput.trim() === correctPassword) {
-      setIsAuthenticated(true);
-      try {
-        sessionStorage.setItem('admin_authenticated', 'true');
-      } catch {}
-      setPasswordError('');
-      setPasswordInput('');
-    } else {
-      setPasswordError('ÐÐµÐ²ÐµÑ€Ð½Ñ‹Ð¹ Ð¿Ð°Ñ€Ð¾Ð»ÑŒ. ÐŸÐ¾Ð¿Ñ€Ð¾Ð±ÑƒÐ¹Ñ‚Ðµ ÐµÑ‰Ðµ Ñ€Ð°Ð·.');
-    }
-  }
-
-  function handleLogout() {
-    setIsAuthenticated(false);
-    try {
-      sessionStorage.removeItem('admin_authenticated');
-    } catch {}
-  }
-
-  async function handleChangePassword(e: React.FormEvent) {
-    e.preventDefault();
-    if (!newPassword.trim()) {
-      alert('Ð’Ð²ÐµÐ´Ð¸Ñ‚Ðµ Ð½Ð¾Ð²Ñ‹Ð¹ Ð¿Ð°Ñ€Ð¾Ð»ÑŒ');
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      alert('ÐŸÐ°Ñ€Ð¾Ð»Ð¸ Ð½Ðµ ÑÐ¾Ð²Ð¿Ð°Ð´Ð°ÑŽÑ‚');
-      return;
-    }
-    const updated = { ...config, adminPassword: newPassword.trim() };
-    setConfig(updated);
-    onConfigChange?.(updated);
-    setSaving(true);
-    setNotice('Ð¡Ð¾Ñ…Ñ€Ð°Ð½ÑÐµÐ¼ Ð½Ð¾Ð²Ñ‹Ð¹ Ð¿Ð°Ñ€Ð¾Ð»ÑŒ...');
-    try {
-      const r = await fetch('/api/config', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config: updated, publish: true }),
-      });
-      if (r.ok) {
-        setNotice('âœ“ ÐŸÐ°Ñ€Ð¾Ð»ÑŒ Ð°Ð´Ð¼Ð¸Ð½Ð¸ÑÑ‚Ñ€Ð°Ñ‚Ð¾Ñ€Ð° ÑƒÑÐ¿ÐµÑˆÐ½Ð¾ Ð¸Ð·Ð¼ÐµÐ½ÐµÐ½!');
-        setNewPassword('');
-        setConfirmPassword('');
-      } else {
-        setNotice('ÐžÑˆÐ¸Ð±ÐºÐ° Ð¿Ñ€Ð¸ ÑÐ¾Ñ…Ñ€Ð°Ð½ÐµÐ½Ð¸Ð¸ Ð¿Ð°Ñ€Ð¾Ð»Ñ');
-      }
-    } catch {
-      setNotice('ÐžÑˆÐ¸Ð±ÐºÐ° ÑÐµÑ‚Ð¸ Ð¿Ñ€Ð¸ ÑÐ¾Ñ…Ñ€Ð°Ð½ÐµÐ½Ð¸Ð¸');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  // Search & Filters
-  const [productSearch, setProductSearch] = useState('');
-  const [productCategoryFilter, setProductCategoryFilter] = useState('all');
-  const [serviceSearch, setServiceSearch] = useState('');
-  const [serviceCategoryFilter, setServiceCategoryFilter] = useState('all');
-
-  // JSON Import
-  const [jsonInput, setJsonInput] = useState('');
-  const [showJsonModal, setShowJsonModal] = useState(false);
-
-  useEffect(() => {
-    let ignore = false;
-    async function init() {
-      try {
-        const cfgRes = await fetch('/api/config?draft=1');
-        if (cfgRes.ok) {
-          const d = (await cfgRes.json()) as { config?: Config };
-          if (d?.config && !ignore) {
-            setConfig(d.config);
-            if (d.config.adminMode) setRole(d.config.adminMode);
-          }
-        }
-      } catch (e) {
-        console.error('Error fetching initial config:', e);
-      }
-    }
-    init();
-    loadData();
-    return () => {
-      ignore = true;
-    };
-  }, []);
-
-  async function loadData() {
-    try {
-      const [bRes, oRes] = await Promise.all([
-        fetch('/api/bookings'),
-        fetch('/api/orders'),
-      ]);
-
-      if (bRes.ok) {
-        const b = (await bRes.json()) as { bookings?: (Booking & { addOns?: unknown })[] };
-        if (b?.bookings) {
-          setBookings(
-            b.bookings.map((v) => ({
-              ...v,
-              addOns: parseAddOns(v.addOns),
-            }))
-          );
-        }
-      }
-
-      if (oRes.ok) {
-        const o = (await oRes.json()) as { orders?: Order[] };
-        if (o?.orders) {
-          setOrders(o.orders);
-        }
-      }
-    } catch (e) {
-      console.error('Error loading admin data', e);
-    }
-  }
-
-  function updateField<K extends keyof Config>(key: K, value: Config[K]) {
-    setConfig((c) => {
-      const next = { ...c, [key]: value };
-      onConfigChange?.(next);
-      return next;
-    });
-    setHasChanges(true);
-    setNotice('');
-  }
-
-  // ================= PRODUCTS CRUD =================
-  function addProduct() {
-    const newProd: Product = {
-      id: 'prod_' + Date.now().toString(36),
-      name: 'ÐÐ¾Ð²Ñ‹Ð¹ Ñ‚Ð¾Ð²Ð°Ñ€ ' + ((config.products?.length || 0) + 1),
-      description: 'ÐŸÐ¾Ð´Ñ€Ð¾Ð±Ð½Ð¾Ðµ Ð¾Ð¿Ð¸ÑÐ°Ð½Ð¸Ðµ Ñ‚Ð¾Ð²Ð°Ñ€Ð°, Ñ…Ð°Ñ€Ð°ÐºÑ‚ÐµÑ€Ð¸ÑÑ‚Ð¸ÐºÐ¸ Ð¸ Ð¿Ñ€ÐµÐ¸Ð¼ÑƒÑ‰ÐµÑÑ‚Ð²Ð°',
-      price: 2500,
-      oldPrice: 3200,
-      imageUrl: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=800&q=80',
-      category: 'ÐžÑÐ½Ð¾Ð²Ð½Ð¾Ðµ',
-      badge: 'ÐÐ¾Ð²Ð¸Ð½ÐºÐ°',
-      inStock: true,
-      enabled: true,
-    };
-    const current = config.products || [];
-    updateField('products', [...current, newProd]);
-    setNotice('Ð¢Ð¾Ð²Ð°Ñ€ ÑƒÑÐ¿ÐµÑˆÐ½Ð¾ Ð´Ð¾Ð±Ð°Ð²Ð»ÐµÐ½ Ð² ÐºÐ°Ñ‚Ð°Ð»Ð¾Ð³!');
-  }
-
-  function updateProduct(id: string, patch: Partial<Product>) {
-    const current = config.products || [];
-    updateField(
-      'products',
-      current.map((p) => (p.id === id ? { ...p, ...patch } : p))
-    );
-  }
-
-  function duplicateProduct(product: Product) {
-    const clone: Product = {
-      ...product,
-      id: 'prod_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 5),
-      name: product.name + ' (ÐšÐ¾Ð¿Ð¸Ñ)',
-    };
-    const current = config.products || [];
-    const index = current.findIndex((p) => p.id === product.id);
-    const nextList = [...current];
-    nextList.splice(index + 1, 0, clone);
-    updateField('products', nextList);
-    setNotice(`Ð¢Ð¾Ð²Ð°Ñ€ ÑÐºÐ¾Ð¿Ð¸Ñ€Ð¾Ð²Ð°Ð½: Â«${clone.name}Â»`);
-  }
-
-  function removeProduct(id: string) {
-    const current = config.products || [];
-    updateField(
-      'products',
-      current.filter((p) => p.id !== id)
-    );
-    setNotice('Ð¢Ð¾Ð²Ð°Ñ€ ÑƒÐ´Ð°Ð»ÐµÐ½ Ð¸Ð· ÐºÐ°Ñ‚Ð°Ð»Ð¾Ð³Ð°');
-  }
-
-  function addBatchProducts() {
-    const batch: Product[] = [
-      { id: 'bp_1_' + Date.now(), name: 'ÐŸÑ€ÐµÐ¼Ð¸ÑƒÐ¼ ÐºÐ¾Ð¼Ð¿Ð»ÐµÐºÑ‚ Style Edition', description: 'Ð›Ð¸Ð¼Ð¸Ñ‚Ð¸Ñ€Ð¾Ð²Ð°Ð½Ð½Ð°Ñ ÑÐµÑ€Ð¸Ñ Ð² Ñ„Ð¸Ñ€Ð¼ÐµÐ½Ð½Ð¾Ð¹ Ð¿Ð¾Ð´Ð°Ñ€Ð¾Ñ‡Ð½Ð¾Ð¹ ÐºÐ¾Ñ€Ð¾Ð±ÐºÐµ', price: 6900, oldPrice: 8500, imageUrl: 'https://images.unsplash.com/photo-1546868871-7041f2a55e12?auto=format&fit=crop&w=800&q=80', category: 'ÐšÐ¾Ð¼Ð¿Ð»ÐµÐºÑ‚Ñ‹', badge: 'Ð¥Ð¸Ñ‚', inStock: true, enabled: true },
-      { id: 'bp_2_' + Date.now(), name: 'Ð‘Ð°Ð·Ð¾Ð²Ñ‹Ð¹ Ð½Ð°Ð±Ð¾Ñ€ Ð½Ð° ÐºÐ°Ð¶Ð´Ñ‹Ð¹ Ð´ÐµÐ½ÑŒ', description: 'ÐŸÑ€Ð°ÐºÑ‚Ð¸Ñ‡Ð½Ð¾Ðµ Ð¸ Ð½Ð°Ð´ÐµÐ¶Ð½Ð¾Ðµ Ñ€ÐµÑˆÐµÐ½Ð¸Ðµ Ñ Ð³Ð°Ñ€Ð°Ð½Ñ‚Ð¸ÐµÐ¹ 1 Ð³Ð¾Ð´', price: 2900, oldPrice: 3400, imageUrl: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&w=800&q=80', category: 'Ð¥Ð¸Ñ‚Ñ‹', badge: 'Ð¡ÐºÐ¸Ð´ÐºÐ°', inStock: true, enabled: true },
-      { id: 'bp_3_' + Date.now(), name: 'ÐŸÐ¾Ð´Ð°Ñ€Ð¾Ñ‡Ð½Ñ‹Ð¹ ÑÐµÑ€Ñ‚Ð¸Ñ„Ð¸ÐºÐ°Ñ‚ Ð½Ð° 5 000 â‚½', description: 'Ð˜Ð´ÐµÐ°Ð»ÑŒÐ½Ñ‹Ð¹ Ð¿Ð¾Ð´Ð°Ñ€Ð¾Ðº Ð´Ñ€ÑƒÐ·ÑŒÑÐ¼ Ð¸ ÐºÐ¾Ð»Ð»ÐµÐ³Ð°Ð¼ Ð½Ð° Ð»ÑŽÐ±Ñ‹Ðµ Ñ‚Ð¾Ð²Ð°Ñ€Ñ‹', price: 5000, imageUrl: 'https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&w=800&q=80', category: 'Ð¡ÐµÑ€Ñ‚Ð¸Ñ„Ð¸ÐºÐ°Ñ‚Ñ‹', badge: 'Ð’ Ð½Ð°Ð»Ð¸Ñ‡Ð¸Ð¸', inStock: true, enabled: true },
-      { id: 'bp_4_' + Date.now(), name: 'ÐÐºÑÐµÑÑÑƒÐ°Ñ€ ÑÐµÑ€Ð¸Ð¸ Comfort Line', description: 'Ð­Ñ€Ð³Ð¾Ð½Ð¾Ð¼Ð¸Ñ‡Ð½Ñ‹Ð¹ Ð´Ð¸Ð·Ð°Ð¹Ð½ Ð¸ Ð¿Ñ€Ð¸ÑÑ‚Ð½Ñ‹Ðµ Ñ‚Ð°ÐºÑ‚Ð¸Ð»ÑŒÐ½Ñ‹Ðµ Ð¼Ð°Ñ‚ÐµÑ€Ð¸Ð°Ð»Ñ‹', price: 1750, imageUrl: 'https://images.unsplash.com/photo-1583394838336-acd977736f90?auto=format&fit=crop&w=800&q=80', category: 'ÐÐºÑÐµÑÑÑƒÐ°Ñ€Ñ‹', inStock: true, enabled: true },
-      { id: 'bp_5_' + Date.now(), name: 'Ð­ÐºÑÐºÐ»ÑŽÐ·Ð¸Ð²Ð½Ð°Ñ Ð¿Ð¾Ð·Ð¸Ñ†Ð¸Ñ Black Edition', description: 'Ð¡Ñ‚Ñ€Ð¾Ð³Ð¸Ð¹ Ð¼Ð¸Ð½Ð¸Ð¼Ð°Ð»Ð¸Ð·Ð¼ Ð¸ Ð¼Ð°ÐºÑÐ¸Ð¼Ð°Ð»ÑŒÐ½Ð°Ñ Ñ„ÑƒÐ½ÐºÑ†Ð¸Ð¾Ð½Ð°Ð»ÑŒÐ½Ð¾ÑÑ‚ÑŒ', price: 9200, oldPrice: 11000, imageUrl: 'https://images.unsplash.com/photo-1572635196237-14b3f281503f?auto=format&fit=crop&w=800&q=80', category: 'ÐšÐ¾Ð¼Ð¿Ð»ÐµÐºÑ‚Ñ‹', badge: '-20%', inStock: true, enabled: true },
-    ];
-    const current = config.products || [];
-    updateField('products', [...current, ...batch]);
-    setNotice(`ÐŸÐ°ÐºÐµÑ‚ Ð¸Ð· 5 Ñ‚Ð¾Ð²Ð°Ñ€Ð¾Ð² Ð´Ð¾Ð±Ð°Ð²Ð»ÐµÐ½! Ð’ÑÐµÐ³Ð¾ Ð² ÐºÐ°Ñ‚Ð°Ð»Ð¾Ð³Ðµ: ${current.length + 5}`);
-  }
-
-  // ================= SERVICES CRUD =================
-  function addService() {
-    const newService: Service = {
-      id: 'srv_' + Date.now().toString(36),
-      name: 'ÐÐ¾Ð²Ð°Ñ ÑƒÑÐ»ÑƒÐ³Ð° ' + (config.services.length + 1),
-      description: 'ÐšÑ€Ð°Ñ‚ÐºÐ¾Ðµ Ð¾Ð¿Ð¸ÑÐ°Ð½Ð¸Ðµ Ð¿Ñ€Ð¾Ñ†ÐµÐ´ÑƒÑ€Ñ‹ Ð´Ð»Ñ ÐºÐ»Ð¸ÐµÐ½Ñ‚Ð¾Ð²',
-      price: 2000,
-      duration: 45,
-      category: 'ÐžÑÐ½Ð¾Ð²Ð½Ñ‹Ðµ',
-      icon: 'sparkles',
-      enabled: true,
-    };
-    updateField('services', [...config.services, newService]);
-    setNotice('ÐÐ¾Ð²Ð°Ñ ÑƒÑÐ»ÑƒÐ³Ð° Ð´Ð¾Ð±Ð°Ð²Ð»ÐµÐ½Ð° Ð² Ð¿Ñ€Ð°Ð¹Ñ');
-  }
-
-  function updateService(id: string, patch: Partial<Service>) {
-    updateField(
-      'services',
-      config.services.map((s) => (s.id === id ? { ...s, ...patch } : s))
-    );
-  }
-
-  function duplicateService(service: Service) {
-    const clone: Service = {
-      ...service,
-      id: 'srv_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 5),
-      name: service.name + ' (ÐšÐ¾Ð¿Ð¸Ñ)',
-    };
-    const index = config.services.findIndex((s) => s.id === service.id);
-    const nextList = [...config.services];
-    nextList.splice(index + 1, 0, clone);
-    updateField('services', nextList);
-    setNotice(`Ð£ÑÐ»ÑƒÐ³Ð° ÑÐºÐ¾Ð¿Ð¸Ñ€Ð¾Ð²Ð°Ð½Ð°: Â«${clone.name}Â»`);
-  }
-
-  function removeService(id: string) {
-    updateField(
-      'services',
-      config.services.filter((s) => s.id !== id)
-    );
-    setNotice('Ð£ÑÐ»ÑƒÐ³Ð° ÑƒÐ´Ð°Ð»ÐµÐ½Ð°');
-  }
-
-  // ================= PRESETS / NICHES =================
-  async function applyPreset(key: PresetKey) {
-    const chosen = presets[key];
-    if (!chosen) return;
-    const nextConfig = structuredClone(chosen);
-    // preserve current admin mode
-    nextConfig.adminMode = role;
-    setConfig(nextConfig);
-    onConfigChange?.(nextConfig);
-    setSaving(true);
-    setNotice(`ÐŸÑ€Ð¸Ð¼ÐµÐ½ÑÐµÐ¼ Ð½Ð¸ÑˆÑƒ Â«${chosen.nicheLabel}Â»...`);
-
-    try {
-      const r = await fetch('/api/config', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config: nextConfig, publish: true }),
-      });
-      if (r.ok) {
-        setNotice(`ÐÐ¸ÑˆÐ° Â«${chosen.nicheLabel}Â» ÑƒÑÐ¿ÐµÑˆÐ½Ð¾ Ð°ÐºÑ‚Ð¸Ð²Ð¸Ñ€Ð¾Ð²Ð°Ð½Ð° Ð¸ Ð¾Ð¿ÑƒÐ±Ð»Ð¸ÐºÐ¾Ð²Ð°Ð½Ð° Ð½Ð° ÑÐ°Ð¹Ñ‚Ðµ!`);
-        setHasChanges(false);
-      }
-    } catch {
-      setNotice(`ÐÐ¸ÑˆÐ° Ð°ÐºÑ‚Ð¸Ð²Ð¸Ñ€Ð¾Ð²Ð°Ð½Ð°.`);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function saveConfig() {
-    setSaving(true);
-    setNotice('ÐŸÑƒÐ±Ð»Ð¸ÐºÑƒÐµÐ¼ Ð¸Ð·Ð¼ÐµÐ½ÐµÐ½Ð¸Ñ Ð½Ð° ÑÐ°Ð¹Ñ‚Ðµ...');
-    try {
-      const r = await fetch('/api/config', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config, publish: true }),
-      });
-      if (!r.ok) {
-        const err = (await r.json()) as { error?: string };
-        throw new Error(err.error || 'ÐžÑˆÐ¸Ð±ÐºÐ° Ð¿Ñ€Ð¸ ÑÐ¾Ñ…Ñ€Ð°Ð½ÐµÐ½Ð¸Ð¸');
-      }
-      setNotice('Ð’ÑÐµ Ð¸Ð·Ð¼ÐµÐ½ÐµÐ½Ð¸Ñ ÑƒÑÐ¿ÐµÑˆÐ½Ð¾ ÑÐ¾Ñ…Ñ€Ð°Ð½ÐµÐ½Ñ‹ Ð¸ Ð¾Ð¿ÑƒÐ±Ð»Ð¸ÐºÐ¾Ð²Ð°Ð½Ñ‹ Ð½Ð° ÑÐ°Ð¹Ñ‚Ðµ!');
-      setHasChanges(false);
-      onConfigChange?.(config);
-    } catch (e) {
-      setNotice(e instanceof Error ? e.message : 'ÐžÑˆÐ¸Ð±ÐºÐ° ÑÐ¾Ñ…Ñ€Ð°Ð½ÐµÐ½Ð¸Ñ Ð½Ð°ÑÑ‚Ñ€Ð¾ÐµÐº');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function updateOrderStatus(id: string, newStatus: string, payStatus?: string) {
-    try {
-      const r = await fetch(`/api/orders/${encodeURIComponent(id)}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus, paymentStatus: payStatus }),
-      });
-      if (r.ok) {
-        setOrders((prev) =>
-          prev.map((o) => (o.id === id ? { ...o, status: newStatus as Order['status'], paymentStatus: (payStatus || o.paymentStatus) as Order['paymentStatus'] } : o))
-        );
-        setNotice(`Ð¡Ñ‚Ð°Ñ‚ÑƒÑ Ð·Ð°ÐºÐ°Ð·Ð° ${id} Ð¾Ð±Ð½Ð¾Ð²Ð»ÐµÐ½ Ð½Ð° Â«${newStatus}Â»`);
-      }
-    } catch {
-      setNotice('ÐžÑˆÐ¸Ð±ÐºÐ° Ð¾Ð±Ð½Ð¾Ð²Ð»ÐµÐ½Ð¸Ñ ÑÑ‚Ð°Ñ‚ÑƒÑÐ° Ð·Ð°ÐºÐ°Ð·Ð°');
-    }
-  }
-
-  // Export config to JSON
-  function exportConfigJson() {
-    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(config, null, 2));
-    const dlAnchor = document.createElement('a');
-    dlAnchor.setAttribute('href', dataStr);
-    dlAnchor.setAttribute('download', `site-config-${config.niche}-${Date.now().toString(36)}.json`);
-    dlAnchor.click();
-    setNotice('Ð¤Ð°Ð¹Ð» ÐºÐ¾Ð½Ñ„Ð¸Ð³ÑƒÑ€Ð°Ñ†Ð¸Ð¸ (.json) ÑƒÑÐ¿ÐµÑˆÐ½Ð¾ ÑÐºÐ°Ñ‡Ð°Ð½!');
-  }
-
-  // Export orders to CSV
-  function exportOrdersCsv() {
-    if (!orders.length) {
-      setNotice('ÐÐµÑ‚ Ð·Ð°ÐºÐ°Ð·Ð¾Ð² Ð´Ð»Ñ Ð²Ñ‹Ð³Ñ€ÑƒÐ·ÐºÐ¸.');
-      return;
-    }
-    const headers = ['ÐÐ¾Ð¼ÐµÑ€', 'Ð”Ð°Ñ‚Ð°', 'ÐšÐ»Ð¸ÐµÐ½Ñ‚', 'Ð¢ÐµÐ»ÐµÑ„Ð¾Ð½', 'Ð¡ÑƒÐ¼Ð¼Ð°', 'Ð”Ð¾ÑÑ‚Ð°Ð²ÐºÐ°', 'ÐÐ´Ñ€ÐµÑ', 'ÐžÐ¿Ð»Ð°Ñ‚Ð°', 'Ð¡Ñ‚Ð°Ñ‚ÑƒÑ'];
-    const rows = orders.map((o) => [
-      o.id,
-      o.createdAt,
-      `"${o.customerName.replace(/"/g, '""')}"`,
-      `"${o.customerPhone}"`,
-      o.total,
-      o.deliveryType === 'delivery' ? 'ÐšÑƒÑ€ÑŒÐµÑ€' : 'Ð¡Ð°Ð¼Ð¾Ð²Ñ‹Ð²Ð¾Ð·',
-      `"${(o.deliveryAddress || '').replace(/"/g, '""')}"`,
-      o.paymentStatus === 'paid' ? 'ÐžÐ¿Ð»Ð°Ñ‡ÐµÐ½' : 'ÐžÐ¶Ð¸Ð´Ð°ÐµÑ‚',
-      o.status,
-    ]);
-    const csvContent = '\uFEFF' + [headers.join(';'), ...rows.map((r) => r.join(';'))].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `orders-${Date.now().toString(36)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    setNotice('Ð¡Ð¿Ð¸ÑÐ¾Ðº Ð·Ð°ÐºÐ°Ð·Ð¾Ð² Ð²Ñ‹Ð³Ñ€ÑƒÐ¶ÐµÐ½ Ð² Ñ„Ð¾Ñ€Ð¼Ð°Ñ‚Ðµ Excel (CSV)!');
-  }
-
-  // Import JSON
-  function importConfigJson() {
-    try {
-      const parsed = JSON.parse(jsonInput) as Config;
-      if (!parsed.name) throw new Error('ÐÐµÐºÐ¾Ñ€Ñ€ÐµÐºÑ‚Ð½Ñ‹Ð¹ Ñ„Ð°Ð¹Ð»');
-      setConfig(parsed);
-      onConfigChange?.(parsed);
-      setShowJsonModal(false);
-      setJsonInput('');
-      setHasChanges(true);
-      setNotice('ÐšÐ¾Ð½Ñ„Ð¸Ð³ÑƒÑ€Ð°Ñ†Ð¸Ñ Ð·Ð°Ð³Ñ€ÑƒÐ¶ÐµÐ½Ð°! ÐÐ°Ð¶Ð¼Ð¸Ñ‚Ðµ Â«ÐžÐ¿ÑƒÐ±Ð»Ð¸ÐºÐ¾Ð²Ð°Ñ‚ÑŒ Ð½Ð° ÑÐ°Ð¹Ñ‚ÐµÂ».');
-    } catch {
-      setNotice('ÐžÑˆÐ¸Ð±ÐºÐ°: Ð½ÐµÐºÐ¾Ñ€Ñ€ÐµÐºÑ‚Ð½Ñ‹Ð¹ JSON Ñ„Ð°Ð¹Ð».');
-    }
-  }
-
-  // Active categories
-  const existingProductCategories = useMemo(() => {
-    const set = new Set<string>();
-    (config.products || []).forEach((p) => {
-      if (p.category?.trim()) set.add(p.category.trim());
-    });
-    return Array.from(set);
-  }, [config.products]);
-
-  const existingServiceCategories = useMemo(() => {
-    const set = new Set<string>();
-    (config.services || []).forEach((s) => {
-      if (s.category?.trim()) set.add(s.category.trim());
-    });
-    return Array.from(set);
-  }, [config.services]);
-
-  const filteredAdminProducts = useMemo(() => {
-    return (config.products || []).filter((p) => {
-      const matchCat = productCategoryFilter === 'all' || p.category === productCategoryFilter;
-      const q = productSearch.toLowerCase().trim();
-      const matchQ = !q || p.name.toLowerCase().includes(q) || p.description.toLowerCase().includes(q);
-      return matchCat && matchQ;
-    });
-  }, [config.products, productCategoryFilter, productSearch]);
-
-  const filteredAdminServices = useMemo(() => {
-    return (config.services || []).filter((s) => {
-      const matchCat = serviceCategoryFilter === 'all' || s.category === serviceCategoryFilter;
-      const q = serviceSearch.toLowerCase().trim();
-      const matchQ = !q || s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q);
-      return matchCat && matchQ;
-    });
-  }, [config.services, serviceCategoryFilter, serviceSearch]);
-
-  const activeColor = config.customAccent || themeSwatches.find((t) => t.key === config.theme)?.accentColor || '#3b82f6';
-
-  // Dynamic Tabs for universal administration
-  const availableTabs: { key: Tab; label: string; icon: string; badge?: string }[] = useMemo(() => {
-    const list: { key: Tab; label: string; icon: string; badge?: string }[] = [
-      { key: 'overview', label: 'ÐžÐ±Ð·Ð¾Ñ€', icon: 'ðŸ“Š' },
-    ];
-
-    if (config.siteMode === 'shop' || config.siteMode === 'hybrid') {
-      list.push({ key: 'products', label: 'ÐœÐ¾Ð¸ Ñ‚Ð¾Ð²Ð°Ñ€Ñ‹', icon: 'ðŸ“¦', badge: String(config.products?.length || 0) });
-      list.push({ key: 'orders', label: 'Ð—Ð°ÐºÐ°Ð·Ñ‹ Ð¸Ð· ÐºÐ¾Ñ€Ð·Ð¸Ð½Ñ‹', icon: 'ðŸ›’', badge: String(orders.length) });
-    }
-
-    if (config.siteMode === 'services' || config.siteMode === 'hybrid') {
-      list.push({ key: 'services', label: 'ÐœÐ¾Ð¸ ÑƒÑÐ»ÑƒÐ³Ð¸', icon: 'âœ‚', badge: String(config.services?.length || 0) });
-      list.push({ key: 'bookings', label: 'Ð—Ð°Ð¿Ð¸ÑÐ¸ ÐºÐ»Ð¸ÐµÐ½Ñ‚Ð¾Ð²', icon: 'ðŸ“…', badge: String(bookings.length) });
-    }
-
-    list.push({ key: 'design', label: 'Ð¦Ð²ÐµÑ‚Ð° Ð¸ Ð¾Ñ„Ð¾Ñ€Ð¼Ð»ÐµÐ½Ð¸Ðµ', icon: 'ðŸŽ¨' });
-    list.push({ key: 'contacts', label: 'ÐšÐ¾Ð½Ñ‚Ð°ÐºÑ‚Ñ‹ Ð¸ Ð´Ð¾ÑÑ‚Ð°Ð²ÐºÐ°', icon: 'ðŸ¢' });
-    list.push({ key: 'payments', label: 'ÐžÐ¿Ð»Ð°Ñ‚Ð° Ð¸ ÐºÐ°ÑÑÐ°', icon: 'ðŸ’³' });
-    list.push({ key: 'security', label: 'ÐŸÐ°Ñ€Ð¾Ð»ÑŒ Ð¸ Ð²Ñ…Ð¾Ð´', icon: 'ðŸ”’' });
-    list.push({ key: 'guide', label: 'Ð˜Ð½ÑÑ‚Ñ€ÑƒÐºÑ†Ð¸Ñ', icon: 'ðŸ“–' });
-    list.push({ key: 'presets', label: 'Ð¨Ð°Ð±Ð»Ð¾Ð½Ñ‹ Ð½Ð¸Ñˆ (Dev)', icon: 'âš™ï¸' });
-    return list;
-  }, [config.siteMode, config.products, config.services, orders.length, bookings.length]);
-
-  // If not authenticated, require password (default 12345)
-  if (!isAuthenticated) {
-    return (
-      <div className="admin-login-screen">
-        <div className="admin-login-card">
-          <div className="admin-login-badge">
-            <Lock size={28} color="#fff" />
-          </div>
-          <h2 className="admin-login-title">Ð’Ñ…Ð¾Ð´ Ð² Ð¿Ð°Ð½ÐµÐ»ÑŒ ÑƒÐ¿Ñ€Ð°Ð²Ð»ÐµÐ½Ð¸Ñ</h2>
-          <p className="admin-login-sub">
-            Ð’Ð²ÐµÐ´Ð¸Ñ‚Ðµ Ð¿Ð°Ñ€Ð¾Ð»ÑŒ Ð°Ð´Ð¼Ð¸Ð½Ð¸ÑÑ‚Ñ€Ð°Ñ‚Ð¾Ñ€Ð° Ð´Ð»Ñ ÑƒÐ¿Ñ€Ð°Ð²Ð»ÐµÐ½Ð¸Ñ Ñ‚Ð¾Ð²Ð°Ñ€Ð°Ð¼Ð¸, Ð·Ð°ÐºÐ°Ð·Ð°Ð¼Ð¸ Ð¸ Ð½Ð°ÑÑ‚Ñ€Ð¾Ð¹ÐºÐ°Ð¼Ð¸
-          </p>
-
-          <form onSubmit={handleLogin}>
-            <div className="admin-login-input-wrap">
-              <input
-                type={showPassword ? 'text' : 'password'}
-                className="admin-login-input"
-                placeholder="Ð’Ð²ÐµÐ´Ð¸Ñ‚Ðµ Ð¿Ð°Ñ€Ð¾Ð»ÑŒ..."
-                value={passwordInput}
-                onChange={(e) => {
-                  setPasswordInput(e.target.value);
-                  setPasswordError('');
-                }}
-                autoFocus
-              />
-              <button
-                type="button"
-                className="admin-login-toggle-btn"
-                onClick={() => setShowPassword(!showPassword)}
-                title={showPassword ? 'Ð¡ÐºÑ€Ñ‹Ñ‚ÑŒ' : 'ÐŸÐ¾ÐºÐ°Ð·Ð°Ñ‚ÑŒ'}
-              >
-                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-              </button>
-            </div>
-
-            {passwordError && (
-              <div style={{ color: '#ef4444', fontSize: '13px', marginBottom: '14px', textAlign: 'center', fontWeight: 600 }}>
-                {passwordError}
-              </div>
-            )}
-
-            <button type="submit" className="admin-login-btn">
-              Ð’Ð¾Ð¹Ñ‚Ð¸ Ð² Ð¿Ð°Ð½ÐµÐ»ÑŒ <ArrowRight size={16} />
-            </button>
-          </form>
-
-          <div className="admin-login-hint">
-            ðŸ”’ <strong>ÐŸÐ°Ñ€Ð¾Ð»ÑŒ Ð¿Ð¾ ÑƒÐ¼Ð¾Ð»Ñ‡Ð°Ð½Ð¸ÑŽ: 12345</strong><br />
-            Ð’Ñ‹ Ð¼Ð¾Ð¶ÐµÑ‚Ðµ Ð¸Ð·Ð¼ÐµÐ½Ð¸Ñ‚ÑŒ ÐµÐ³Ð¾ Ð² Ð»ÑŽÐ±Ð¾Ð¹ Ð¼Ð¾Ð¼ÐµÐ½Ñ‚ Ð²Ð¾ Ð²ÐºÐ»Ð°Ð´ÐºÐµ Â«ÐŸÐ°Ñ€Ð¾Ð»ÑŒ Ð¸ Ð²Ñ…Ð¾Ð´Â».
-          </div>
-
-          {onExit ? (
-            <button type="button" onClick={onExit} className="admin-login-back" style={{ background: 'none', border: 0, width: '100%', cursor: 'pointer' }}>
-              â† Ð’ÐµÑ€Ð½ÑƒÑ‚ÑŒÑÑ Ð½Ð° ÑÐ°Ð¹Ñ‚ (Ð²Ð¸Ð´ Ð´Ð»Ñ ÐºÐ»Ð¸ÐµÐ½Ñ‚Ð¾Ð²)
-            </button>
-          ) : (
-            <Link href="/" className="admin-login-back">
-              â† Ð’ÐµÑ€Ð½ÑƒÑ‚ÑŒÑÑ Ð½Ð° ÑÐ°Ð¹Ñ‚ (Ð²Ð¸Ð´ Ð´Ð»Ñ ÐºÐ»Ð¸ÐµÐ½Ñ‚Ð¾Ð²)
-            </Link>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="admin">
-      {/* Desktop Sidebar */}
-      <aside className="admin-sidebar">
-        <div className="admin-brand">
-          <span>
-            <Sparkles size={20} />
-          </span>
-          <div>
-            Ð¡Ð»Ð¾Ñ‚Ð‘Ð¸Ð·Ð½ÐµÑ
-            <small>ÐŸÐÐÐ•Ð›Ð¬ Ð£ÐŸÐ ÐÐ’Ð›Ð•ÐÐ˜Ð¯</small>
-          </div>
-        </div>
-
-        {/* Tenant Card */}
-        <div className="admin-tenant">
-          <div className="tenant-avatar">â˜…</div>
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <strong>{config.name}</strong>
-            <small>{config.nicheLabel || 'ÐžÐ½Ð»Ð°Ð¹Ð½-Ð±Ð¸Ð·Ð½ÐµÑ'}</small>
-          </div>
-          <ChevronRight size={16} color="#8e9bb5" />
-        </div>
-
-        {/* Sidebar Nav */}
-        <nav>
-          {availableTabs.map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              className={tab === item.key ? 'active' : ''}
-              onClick={() => {
-                setTab(item.key);
-                setNotice('');
-              }}
-            >
-              <span style={{ fontSize: '16px' }}>{item.icon}</span>
-              <span>{item.label}</span>
-              {item.badge && <em style={{ background: '#2563eb' }}>{item.badge}</em>}
-            </button>
-          ))}
-        </nav>
-
-        <div className="sidebar-bottom">
-          {onExit ? (
-            <button type="button" onClick={onExit} className="admin-primary">
-              â† ÐÐ° ÑÐ°Ð¹Ñ‚ (Ð²Ð¸Ð´ ÐºÐ»Ð¸ÐµÐ½Ñ‚Ð°)
-            </button>
-          ) : (
-            <Link href="/" className="admin-primary">
-              â† ÐÐ° ÑÐ°Ð¹Ñ‚ (Ð²Ð¸Ð´ ÐºÐ»Ð¸ÐµÐ½Ñ‚Ð°)
-            </Link>
-          )}
-          <span>{role === 'developer' ? 'âš™ï¸ Ð ÐµÐ¶Ð¸Ð¼ Ð°Ð³ÐµÐ½Ñ‚ÑÑ‚Ð²Ð° Ð°ÐºÑ‚Ð¸Ð²ÐµÐ½' : 'ðŸ‘¤ ÐŸÐ°Ð½ÐµÐ»ÑŒ Ð²Ð»Ð°Ð´ÐµÐ»ÑŒÑ†Ð° Ð³Ð¾Ñ‚Ð¾Ð²Ð° Ðº Ñ€Ð°Ð±Ð¾Ñ‚Ðµ'}</span>
-        </div>
-      </aside>
-
-      <main className="admin-main">
-        {/* Top Header */}
-        <header className="admin-top">
-          <div className="admin-top-left">
-            <span className="live-dot" />
-            <div className="admin-top-title">
-              ÐŸÐ°Ð½ÐµÐ»ÑŒ ÑƒÐ¿Ñ€Ð°Ð²Ð»ÐµÐ½Ð¸Ñ / <strong>{availableTabs.find((t) => t.key === tab)?.label}</strong>
-            </div>
-          </div>
-
-          <div className="admin-top-right">
-            <a
-              href="/project-source.zip"
-              download="universal-booking-site-source.zip"
-              className="client-view-link"
-              style={{ background: '#2563eb', color: '#fff', borderColor: '#3b82f6' }}
-              title="Ð¡ÐºÐ°Ñ‡Ð°Ñ‚ÑŒ Ð¿Ð¾Ð»Ð½Ñ‹Ð¹ ZIP-Ð°Ñ€Ñ…Ð¸Ð² Ð¸ÑÑ…Ð¾Ð´Ð½Ð¸ÐºÐ¾Ð² Ð¿Ñ€Ð¾ÐµÐºÑ‚Ð°"
-            >
-              <Download size={14} /> Ð¡ÐºÐ°Ñ‡Ð°Ñ‚ÑŒ Ð¸ÑÑ…Ð¾Ð´Ð½Ð¸ÐºÐ¸ (.zip)
-            </a>
-
-            {onExit ? (
-              <button type="button" onClick={onExit} className="client-view-link">
-                ÐŸÐµÑ€ÐµÐ¹Ñ‚Ð¸ Ð½Ð° ÑÐ°Ð¹Ñ‚ <ExternalLink size={14} />
-              </button>
-            ) : (
-              <Link href="/" className="client-view-link">
-                ÐŸÐµÑ€ÐµÐ¹Ñ‚Ð¸ Ð½Ð° ÑÐ°Ð¹Ñ‚ <ExternalLink size={14} />
-              </Link>
-            )}
-
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="client-view-link"
-              style={{ background: 'rgba(239, 68, 68, 0.12)', color: '#fca5a5', borderColor: '#ef4444' }}
-              title="Ð—Ð°Ð±Ð»Ð¾ÐºÐ¸Ñ€Ð¾Ð²Ð°Ñ‚ÑŒ Ð¸ Ð²Ñ‹Ð¹Ñ‚Ð¸ Ð¸Ð· Ð¿Ð°Ð½ÐµÐ»Ð¸ ÑƒÐ¿Ñ€Ð°Ð²Ð»ÐµÐ½Ð¸Ñ"
-            >
-              <Lock size={14} /> Ð’Ñ‹Ð¹Ñ‚Ð¸
-            </button>
-          </div>
-        </header>
-
-        {/* Responsive Horizontal Tab Bar */}
-        <div className="admin-tab-nav">
-          {availableTabs.map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              className={`admin-tab-btn ${tab === item.key ? 'active' : ''}`}
-              onClick={() => {
-                setTab(item.key);
-                setNotice('');
-              }}
-            >
-              <span>{item.icon}</span>
-              <span>{item.label}</span>
-              {item.badge && <em style={{ background: '#2563eb' }}>{item.badge}</em>}
-            </button>
-          ))}
-        </div>
-
-        {/* Notification Toast */}
-        {notice && (
-          <div className="admin-notice">
-            <span>âœ“</span>
-            <span>{notice}</span>
-            <button type="button" onClick={() => setNotice('')}>
-              âœ•
-            </button>
-          </div>
-        )}
-
-        {/* Save Bar */}
-        {hasChanges && (
-          <div className="admin-save-bar">
-            <div>
-              <strong>Ð•ÑÑ‚ÑŒ Ð½ÐµÐ¾Ð¿ÑƒÐ±Ð»Ð¸ÐºÐ¾Ð²Ð°Ð½Ð½Ñ‹Ðµ Ð¸Ð·Ð¼ÐµÐ½ÐµÐ½Ð¸Ñ</strong>
-              <small>ÐÐ°Ð¶Ð¼Ð¸Ñ‚Ðµ Â«ÐžÐ¿ÑƒÐ±Ð»Ð¸ÐºÐ¾Ð²Ð°Ñ‚ÑŒ Ð½Ð° ÑÐ°Ð¹Ñ‚ÐµÂ», Ñ‡Ñ‚Ð¾Ð±Ñ‹ ÐºÐ»Ð¸ÐµÐ½Ñ‚Ñ‹ ÑƒÐ²Ð¸Ð´ÐµÐ»Ð¸ Ð¾Ð±Ð½Ð¾Ð²Ð»ÐµÐ½Ð¸Ñ.</small>
-            </div>
-            <button type="button" className="admin-primary" disabled={saving} onClick={saveConfig}>
-              <Save size={16} /> {saving ? 'Ð¡Ð¾Ñ…Ñ€Ð°Ð½ÑÐµÐ¼...' : 'ÐžÐ¿ÑƒÐ±Ð»Ð¸ÐºÐ¾Ð²Ð°Ñ‚ÑŒ Ð½Ð° ÑÐ°Ð¹Ñ‚Ðµ'}
-            </button>
-          </div>
-        )}
-
-        <div className="admin-content">
-          {/* ================= TAB 1: OVERVIEW ================= */}
-          {tab === 'overview' && (
-            <>
-              <div className="metric-grid">
-                {(config.siteMode === 'shop' || config.siteMode === 'hybrid') && (
-                  <div className="metric-card" onClick={() => setTab('orders')}>
-                    <span>Ð—ÐÐšÐÐ—ÐžÐ’ Ð˜Ð— ÐšÐžÐ Ð—Ð˜ÐÐ«</span>
-                    <strong>{String(orders.length).padStart(2, '0')}</strong>
-                    <small>Ð’Ñ‹Ñ€ÑƒÑ‡ÐºÐ°: {money(orders.reduce((acc, o) => acc + o.total, 0))} â†’</small>
-                  </div>
-                )}
-
-                {(config.siteMode === 'services' || config.siteMode === 'hybrid') && (
-                  <div className="metric-card" onClick={() => setTab('bookings')}>
-                    <span>Ð—ÐÐŸÐ˜Ð¡Ð•Ð™ ÐšÐ›Ð˜Ð•ÐÐ¢ÐžÐ’</span>
-                    <strong>{String(bookings.length).padStart(2, '0')}</strong>
-                    <small>ÐÐºÑ‚Ð¸Ð²Ð½Ñ‹Ñ… Ð±Ñ€Ð¾Ð½Ð¸Ñ€Ð¾Ð²Ð°Ð½Ð¸Ð¹ â†’</small>
-                  </div>
-                )}
-
-                {(config.siteMode === 'shop' || config.siteMode === 'hybrid') && (
-                  <div className="metric-card" onClick={() => setTab('products')}>
-                    <span>Ð¢ÐžÐ’ÐÐ ÐžÐ’ Ð’ ÐšÐÐ¢ÐÐ›ÐžÐ“Ð•</span>
-                    <strong>{String((config.products || []).filter((p) => p.enabled).length).padStart(2, '0')}</strong>
-                    <small>Ð’ÑÐµÐ³Ð¾: {(config.products || []).length} Ñ‚Ð¾Ð²Ð°Ñ€Ð¾Ð² â†’</small>
-                  </div>
-                )}
-
-                {(config.siteMode === 'services' || config.siteMode === 'hybrid') && (
-                  <div className="metric-card" onClick={() => setTab('services')}>
-                    <span>Ð£Ð¡Ð›Ð£Ð“ Ð’ ÐŸÐ ÐÐ™Ð¡Ð•</span>
-                    <strong>{String(config.services.filter((s) => s.enabled).length).padStart(2, '0')}</strong>
-                    <small>Ð’ÑÐµÐ³Ð¾: {config.services.length} ÑƒÑÐ»ÑƒÐ³ â†’</small>
-                  </div>
-                )}
-
-                <div className="metric-card" onClick={() => setTab('design')}>
-                  <span>ÐÐšÐ¢Ð˜Ð’ÐÐ«Ð™ Ð¦Ð’Ð•Ð¢</span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
-                    <span style={{ width: '20px', height: '20px', borderRadius: '50%', backgroundColor: activeColor }} />
-                    <strong style={{ fontSize: '18px', margin: 0 }}>
-                      {themeSwatches.find((t) => t.key === config.theme)?.title || 'ÐŸÐ¾Ð»ÑŒÐ·Ð¾Ð²Ð°Ñ‚ÐµÐ»ÑŒÑÐºÐ¸Ð¹'}
-                    </strong>
-                  </div>
-                  <small style={{ marginTop: '6px' }}>ÐÐ°ÑÑ‚Ñ€Ð¾Ð¸Ñ‚ÑŒ Ð¿Ð°Ð»Ð¸Ñ‚Ñ€Ñƒ â†’</small>
-                </div>
-              </div>
-
-              {/* Quick Actions Panel */}
-              <div className="admin-two">
-                <section className="admin-panel">
-                  <div className="panel-head">
-                    <h2>ÐŸÐ¾ÑÐ»ÐµÐ´Ð½Ð¸Ðµ Ð·Ð°ÐºÐ°Ð·Ñ‹ Ð¸ Ð·Ð°ÑÐ²ÐºÐ¸</h2>
-                    <button type="button" onClick={() => setTab(config.siteMode === 'shop' ? 'orders' : 'bookings')}>
-                      Ð¡Ð¼Ð¾Ñ‚Ñ€ÐµÑ‚ÑŒ Ð²ÑÐµ â†’
-                    </button>
-                  </div>
-
-                  {orders.length > 0 ? (
-                    orders.slice(0, 4).map((o) => (
-                      <div key={o.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: 'rgba(255,255,255,0.03)', borderRadius: '10px', marginBottom: '8px', border: '1px solid var(--adm-border)' }}>
-                        <div>
-                          <strong>#{o.id} â€¢ {o.customerName}</strong>
-                          <div style={{ fontSize: '12px', color: '#8e9bb5' }}>{o.customerPhone} â€¢ {o.deliveryType === 'delivery' ? 'Ð”Ð¾ÑÑ‚Ð°Ð²ÐºÐ°' : 'Ð¡Ð°Ð¼Ð¾Ð²Ñ‹Ð²Ð¾Ð·'}</div>
-                        </div>
-                        <div style={{ textAlign: 'right' }}>
-                          <strong style={{ color: '#38bdf8' }}>{money(o.total)}</strong>
-                          <div style={{ fontSize: '11px', color: o.paymentStatus === 'paid' ? '#10b981' : '#f59e0b' }}>
-                            {o.paymentStatus === 'paid' ? 'ÐžÐ¿Ð»Ð°Ñ‡ÐµÐ½' : 'ÐžÐ¶Ð¸Ð´Ð°ÐµÑ‚'}
-                          </div>
-                        </div>
-                      </div>
-                    ))
-                  ) : bookings.length > 0 ? (
-                    bookings.slice(0, 4).map((b) => (
-                      <div key={b.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: 'rgba(255,255,255,0.03)', borderRadius: '10px', marginBottom: '8px', border: '1px solid var(--adm-border)' }}>
-                        <div>
-                          <strong>{b.serviceName}</strong>
-                          <div style={{ fontSize: '12px', color: '#8e9bb5' }}>{b.name} â€¢ {b.phone}</div>
-                        </div>
-                        <strong style={{ color: '#38bdf8' }}>{money(b.price)}</strong>
-                      </div>
-                    ))
-                  ) : (
-                    <p style={{ color: '#8e9bb5' }}>ÐŸÐ¾ÐºÐ° Ð½ÐµÑ‚ Ð½Ð¾Ð²Ñ‹Ñ… Ð·Ð°ÐºÐ°Ð·Ð¾Ð².</p>
-                  )}
-                </section>
-
-                <section className="admin-panel quick">
-                  <div className="panel-head">
-                    <h2>Ð‘Ñ‹ÑÑ‚Ñ€Ñ‹Ðµ Ð´ÐµÐ¹ÑÑ‚Ð²Ð¸Ñ</h2>
-                  </div>
-
-                  {(config.siteMode === 'shop' || config.siteMode === 'hybrid') && (
-                    <button type="button" onClick={() => setTab('products')}>
-                      <Package />
-                      <span>Ð£Ð¿Ñ€Ð°Ð²Ð»ÐµÐ½Ð¸Ðµ Ñ‚Ð¾Ð²Ð°Ñ€Ð°Ð¼Ð¸ (ÑÐµÐ¹Ñ‡Ð°Ñ: {(config.products || []).length})</span>
-                      <ArrowRight />
-                    </button>
-                  )}
-
-                  {(config.siteMode === 'services' || config.siteMode === 'hybrid') && (
-                    <button type="button" onClick={() => setTab('services')}>
-                      <Wrench />
-                      <span>Ð£Ð¿Ñ€Ð°Ð²Ð»ÐµÐ½Ð¸Ðµ ÑƒÑÐ»ÑƒÐ³Ð°Ð¼Ð¸ (ÑÐµÐ¹Ñ‡Ð°Ñ: {config.services.length})</span>
-                      <ArrowRight />
-                    </button>
-                  )}
-
-                  <button type="button" onClick={() => setTab('design')}>
-                    <Palette />
-                    <span>ÐÐ°ÑÑ‚Ñ€Ð¾Ð¸Ñ‚ÑŒ Ð¾Ñ‚Ñ‚ÐµÐ½ÐºÐ¸, Ñ†Ð²ÐµÑ‚Ð° Ð¸ Ð¾Ð±Ð»Ð¾Ð¶ÐºÑƒ</span>
-                    <ArrowRight />
-                  </button>
-
-                  <button type="button" onClick={() => setTab('guide')}>
-                    <BookOpen />
-                    <span>Ð˜Ð½ÑÑ‚Ñ€ÑƒÐºÑ†Ð¸Ñ Ð¿Ð¾ Ð·Ð°Ð¿ÑƒÑÐºÑƒ Ð¸ Ð¼Ð°ÑÑˆÑ‚Ð°Ð±Ð¸Ñ€Ð¾Ð²Ð°Ð½Ð¸ÑŽ</span>
-                    <ArrowRight />
-                  </button>
-
-                  <a
-                    href="/project-source.zip"
-                    download="universal-booking-site-source.zip"
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '12px',
-                      padding: '12px 16px',
-                      background: 'rgba(37,99,235,0.12)',
-                      border: '1px solid #2563eb',
-                      borderRadius: '12px',
-                      color: '#fff',
-                      textDecoration: 'none',
-                      fontWeight: 600,
-                      fontSize: '13px',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <Download size={18} color="#60a5fa" />
-                    <span style={{ flex: 1 }}>Ð¡ÐºÐ°Ñ‡Ð°Ñ‚ÑŒ Ð²ÐµÑÑŒ Ð¿Ñ€Ð¾ÐµÐºÑ‚ (ZIP-Ð°Ñ€Ñ…Ð¸Ð² Ð¸ÑÑ…Ð¾Ð´Ð½Ð¸ÐºÐ¾Ð²)</span>
-                    <span style={{ fontSize: '11px', color: '#93c5fd', background: 'rgba(37,99,235,0.3)', padding: '2px 8px', borderRadius: '6px' }}>.ZIP</span>
-                  </a>
-                </section>
-              </div>
-            </>
-          )}
-
-          {/* ================= TAB: PRESETS & DEV TOOLS ================= */}
-          {tab === 'presets' && (
-            <div className="admin-panel">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
-                <div>
-                  <h2>ÐžÑ‚Ñ€Ð°ÑÐ»ÐµÐ²Ñ‹Ðµ ÑˆÐ°Ð±Ð»Ð¾Ð½Ñ‹ Ð¸ ÐºÐ¾Ð½Ñ„Ð¸Ð³ÑƒÑ€Ð°Ñ‚Ð¾Ñ€ Ð½Ð¸ÑˆÐ¸ (Ð”Ð»Ñ Ñ€Ð°Ð·Ñ€Ð°Ð±Ð¾Ñ‚Ñ‡Ð¸ÐºÐ°)</h2>
-                  <p style={{ margin: 0 }}>
-                    Ð’Ñ‹Ð±ÐµÑ€Ð¸Ñ‚Ðµ ÑÑ„ÐµÑ€Ñƒ Ð±Ð¸Ð·Ð½ÐµÑÐ° ÐºÐ»Ð¸ÐµÐ½Ñ‚Ð° â€” ÑˆÐ°Ð±Ð»Ð¾Ð½ Ð°Ð²Ñ‚Ð¾Ð¼Ð°Ñ‚Ð¸Ñ‡ÐµÑÐºÐ¸ Ð½Ð°ÑÑ‚Ñ€Ð¾Ð¸Ñ‚ ÐºÐ°Ñ‚Ð°Ð»Ð¾Ð³, Ñ†ÐµÐ½Ñ‹, Ñ„Ð¾Ñ‚Ð¾, Ñ†Ð²ÐµÑ‚Ð° Ð¸ Ñ‚ÐµÐºÑÑ‚Ñ‹.
-                  </p>
-                </div>
-              </div>
-
-              {/* Site Mode Switcher */}
-              <div style={{ background: '#0b0e14', border: '1px solid #262f42', borderRadius: '14px', padding: '16px 20px', marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
-                <div>
-                  <strong style={{ fontSize: '14px', display: 'block', color: '#fff' }}>Ð¢Ð¸Ð¿ Ð²ÐµÐ±-ÑÐ°Ð¹Ñ‚Ð°:</strong>
-                  <span style={{ fontSize: '12px', color: '#8e9bb5' }}>ÐžÐ¿Ñ€ÐµÐ´ÐµÐ»ÑÐµÑ‚, Ñ‡Ñ‚Ð¾ Ð²Ð¸Ð´Ð¸Ñ‚ Ð¿Ð¾ÐºÑƒÐ¿Ð°Ñ‚ÐµÐ»ÑŒ Ð½Ð° Ð³Ð»Ð°Ð²Ð½Ð¾Ð¹ ÑÑ‚Ñ€Ð°Ð½Ð¸Ñ†Ðµ</span>
-                </div>
-                <div style={{ display: 'inline-flex', background: '#141822', padding: '4px', borderRadius: '10px', border: '1px solid #262f42', gap: '4px' }}>
-                  <button
-                    type="button"
-                    onClick={() => updateField('siteMode', 'shop')}
-                    style={{
-                      background: config.siteMode === 'shop' ? '#2563eb' : 'transparent',
-                      color: config.siteMode === 'shop' ? '#fff' : '#8e9bb5',
-                      border: 0,
-                      borderRadius: '8px',
-                      padding: '6px 14px',
-                      fontSize: '12px',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    ðŸ› Ð¢Ð¾Ð»ÑŒÐºÐ¾ ÐœÐ°Ð³Ð°Ð·Ð¸Ð½
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => updateField('siteMode', 'services')}
-                    style={{
-                      background: config.siteMode === 'services' ? '#2563eb' : 'transparent',
-                      color: config.siteMode === 'services' ? '#fff' : '#8e9bb5',
-                      border: 0,
-                      borderRadius: '8px',
-                      padding: '6px 14px',
-                      fontSize: '12px',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    âœ‚ Ð¢Ð¾Ð»ÑŒÐºÐ¾ Ð£ÑÐ»ÑƒÐ³Ð¸
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => updateField('siteMode', 'hybrid')}
-                    style={{
-                      background: config.siteMode === 'hybrid' ? '#2563eb' : 'transparent',
-                      color: config.siteMode === 'hybrid' ? '#fff' : '#8e9bb5',
-                      border: 0,
-                      borderRadius: '8px',
-                      padding: '6px 14px',
-                      fontSize: '12px',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    âš¡ Ð“Ð¸Ð±Ñ€Ð¸Ð´ (Ð¢Ð¾Ð²Ð°Ñ€Ñ‹ + Ð£ÑÐ»ÑƒÐ³Ð¸)
-                  </button>
-                </div>
-              </div>
-
-              <div className="presets-grid">
-                {presetList.map((p) => {
-                  const isCurrent = config.niche === p.key;
-                  return (
-                    <div key={p.key} className={`preset-card ${isCurrent ? 'active' : ''}`}>
-                      <div>
-                        <div className="preset-card-icon">{p.icon}</div>
-                        <strong>{p.title}</strong>
-                        <small>{p.subtitle}</small>
-                        <div style={{ marginTop: '12px', display: 'flex', gap: '8px', fontSize: '11px', color: '#8e9bb5' }}>
-                          <span style={{ background: 'rgba(255,255,255,0.06)', padding: '2px 8px', borderRadius: '6px' }}>
-                            {p.type}
-                          </span>
-                          <span style={{ background: 'rgba(255,255,255,0.06)', padding: '2px 8px', borderRadius: '6px' }}>
-                            {p.themeName}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div style={{ marginTop: '16px' }}>
-                        <button
-                          type="button"
-                          className={isCurrent ? 'admin-secondary' : 'admin-primary'}
-                          style={{ width: '100%', justifyContent: 'center' }}
-                          onClick={() => applyPreset(p.key)}
-                        >
-                          {isCurrent ? 'âœ“ ÐÐºÑ‚Ð¸Ð²Ð½Ñ‹Ð¹ ÑˆÐ°Ð±Ð»Ð¾Ð½' : 'Ð’Ñ‹Ð±Ñ€Ð°Ñ‚ÑŒ ÑÑ‚Ð¾Ñ‚ ÑˆÐ°Ð±Ð»Ð¾Ð½ â†’'}
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* ================= TAB 3: PRODUCTS CRUD (SHOP) ================= */}
-          {tab === 'products' && (
-            <div className="admin-panel">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px', flexWrap: 'wrap', gap: '12px' }}>
-                <div>
-                  <h2>ÐšÐ°Ñ‚Ð°Ð»Ð¾Ð³ Ñ‚Ð¾Ð²Ð°Ñ€Ð¾Ð² ({(config.products || []).length} Ð¿Ð¾Ð·.)</h2>
-                  <p style={{ margin: 0 }}>
-                    Ð”Ð¾Ð±Ð°Ð²Ð»ÑÐ¹Ñ‚Ðµ Ñ‚Ð¾Ð²Ð°Ñ€Ñ‹ Ñ Ñ„Ð¾Ñ‚Ð¾Ð³Ñ€Ð°Ñ„Ð¸ÑÐ¼Ð¸, Ñ†ÐµÐ½Ð°Ð¼Ð¸, ÑÐºÐ¸Ð´ÐºÐ°Ð¼Ð¸ Ð¸ Ð±ÐµÐ¹Ð´Ð¶Ð°Ð¼Ð¸ (Â«Ð¥Ð¸Ñ‚Â», Â«ÐÐ¾Ð²Ð¸Ð½ÐºÐ°Â»).
-                  </p>
-                </div>
-
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button type="button" className="admin-secondary" onClick={addBatchProducts}>
-                    <Plus size={14} /> + ÐŸÐ°ÐºÐµÑ‚ Ð¸Ð· 5 Ñ‚Ð¾Ð²Ð°Ñ€Ð¾Ð²
-                  </button>
-                  <button type="button" className="admin-primary" onClick={addProduct}>
-                    <Plus size={16} /> Ð”Ð¾Ð±Ð°Ð²Ð¸Ñ‚ÑŒ Ñ‚Ð¾Ð²Ð°Ñ€
-                  </button>
-                </div>
-              </div>
-
-              {/* Controls */}
-              <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
-                <div style={{ flex: 1, minWidth: '220px', position: 'relative' }}>
-                  <input
-                    type="text"
-                    placeholder="ÐŸÐ¾Ð¸ÑÐº Ð¿Ð¾ Ð½Ð°Ð·Ð²Ð°Ð½Ð¸ÑŽ..."
-                    value={productSearch}
-                    onChange={(e) => setProductSearch(e.target.value)}
-                    style={{ width: '100%', height: '40px', background: '#1c2230', border: '1px solid #2d3748', borderRadius: '10px', color: '#fff', padding: '0 12px 0 34px', boxSizing: 'border-box' }}
-                  />
-                  <Search size={15} style={{ position: 'absolute', left: '12px', top: '13px', color: '#8e9bb5' }} />
-                </div>
-
-                <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '4px' }}>
-                  <button
-                    type="button"
-                    className={`service-category-pill ${productCategoryFilter === 'all' ? 'active' : ''}`}
-                    onClick={() => setProductCategoryFilter('all')}
-                  >
-                    Ð’ÑÐµ ({(config.products || []).length})
-                  </button>
-                  {existingProductCategories.map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      className={`service-category-pill ${productCategoryFilter === c ? 'active' : ''}`}
-                      onClick={() => setProductCategoryFilter(c)}
-                    >
-                      {c}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Products Table / Cards */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {filteredAdminProducts.map((p) => (
-                  <div
-                    key={p.id}
-                    style={{
-                      background: 'var(--adm-surface-alt)',
-                      border: '1px solid var(--adm-border)',
-                      borderRadius: '14px',
-                      padding: '16px',
-                      display: 'flex',
-                      gap: '16px',
-                      alignItems: 'center',
-                      flexWrap: 'wrap',
-                    }}
-                  >
-                    <div style={{ width: '70px', height: '70px', borderRadius: '10px', overflow: 'hidden', background: '#0b0e14', flex: 'none' }}>
-                      <img src={p.imageUrl} alt={p.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    </div>
-
-                    <div style={{ flex: '1 1 260px' }}>
-                      <div style={{ display: 'flex', gap: '8px', marginBottom: '6px' }}>
-                        <input
-                          type="text"
-                          value={p.name}
-                          onChange={(e) => updateProduct(p.id, { name: e.target.value })}
-                          style={{ fontWeight: 800, fontSize: '15px', color: '#fff', background: 'transparent', border: 'none', borderBottom: '1px dashed #4b5563', padding: '2px 4px', width: '100%' }}
-                        />
-                      </div>
-                      <input
-                        type="text"
-                        value={p.description}
-                        onChange={(e) => updateProduct(p.id, { description: e.target.value })}
-                        style={{ fontSize: '12px', color: '#8e9bb5', background: 'transparent', border: 'none', borderBottom: '1px dashed #374151', padding: '2px 4px', width: '100%' }}
-                      />
-                    </div>
-
-                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                      <div>
-                        <label style={{ fontSize: '11px', color: '#8e9bb5', display: 'block' }}>Ð¦ÐµÐ½Ð°, â‚½</label>
-                        <input
-                          type="number"
-                          value={p.price}
-                          onChange={(e) => updateProduct(p.id, { price: Number(e.target.value) })}
-                          style={{ width: '90px', height: '36px', background: '#0b0e14', border: '1px solid #374151', borderRadius: '8px', color: '#38bdf8', fontWeight: 800, padding: '0 8px' }}
-                        />
-                      </div>
-
-                      <div>
-                        <label style={{ fontSize: '11px', color: '#8e9bb5', display: 'block' }}>Ð¡Ñ‚Ð°Ñ€Ð°Ñ Ñ†ÐµÐ½Ð°</label>
-                        <input
-                          type="number"
-                          value={p.oldPrice || ''}
-                          placeholder="Ð¡ÐºÐ¸Ð´ÐºÐ°"
-                          onChange={(e) => updateProduct(p.id, { oldPrice: e.target.value ? Number(e.target.value) : undefined })}
-                          style={{ width: '90px', height: '36px', background: '#0b0e14', border: '1px solid #374151', borderRadius: '8px', color: '#9ca3af', padding: '0 8px' }}
-                        />
-                      </div>
-
-                      <div>
-                        <label style={{ fontSize: '11px', color: '#8e9bb5', display: 'block' }}>Ð‘ÐµÐ¹Ð´Ð¶</label>
-                        <input
-                          type="text"
-                          value={p.badge || ''}
-                          placeholder="Ð¥Ð¸Ñ‚ / -15%"
-                          onChange={(e) => updateProduct(p.id, { badge: e.target.value || undefined })}
-                          style={{ width: '90px', height: '36px', background: '#0b0e14', border: '1px solid #374151', borderRadius: '8px', color: '#f59e0b', fontWeight: 700, padding: '0 8px' }}
-                        />
-                      </div>
-
-                      <div>
-                        <label style={{ fontSize: '11px', color: '#8e9bb5', display: 'block' }}>ÐšÐ°Ñ‚ÐµÐ³Ð¾Ñ€Ð¸Ñ</label>
-                        <input
-                          type="text"
-                          value={p.category || ''}
-                          onChange={(e) => updateProduct(p.id, { category: e.target.value })}
-                          style={{ width: '110px', height: '36px', background: '#0b0e14', border: '1px solid #374151', borderRadius: '8px', color: '#fff', padding: '0 8px' }}
-                        />
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'flex', gap: '6px' }}>
-                      <button
-                        type="button"
-                        onClick={() => duplicateProduct(p)}
-                        className="admin-secondary"
-                        style={{ padding: '8px 12px' }}
-                        title="ÐšÐ»Ð¾Ð½Ð¸Ñ€Ð¾Ð²Ð°Ñ‚ÑŒ Ñ‚Ð¾Ð²Ð°Ñ€"
-                      >
-                        <Copy size={14} /> ÐšÐ»Ð¾Ð½
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => removeProduct(p.id)}
-                        className="admin-secondary"
-                        style={{ padding: '8px 12px', color: '#ef4444', borderColor: '#7f1d1d' }}
-                        title="Ð£Ð´Ð°Ð»Ð¸Ñ‚ÑŒ Ñ‚Ð¾Ð²Ð°Ñ€"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* ================= TAB 4: ORDERS (SHOP) ================= */}
-          {tab === 'orders' && (
-            <div className="admin-panel">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px', flexWrap: 'wrap', gap: '12px' }}>
-                <div>
-                  <h2>Ð—Ð°ÐºÐ°Ð·Ñ‹ Ð¸Ð· ÐºÐ¾Ñ€Ð·Ð¸Ð½Ñ‹ ({orders.length})</h2>
-                  <p style={{ margin: 0 }}>Ð’Ñ…Ð¾Ð´ÑÑ‰Ð¸Ðµ Ð·Ð°ÑÐ²ÐºÐ¸ Ð¿Ð¾ÐºÑƒÐ¿Ð°Ñ‚ÐµÐ»ÐµÐ¹, Ð´Ð¾ÑÑ‚Ð°Ð²ÐºÐ°, ÑÐ¾ÑÑ‚Ð°Ð² Ð·Ð°ÐºÐ°Ð·Ð° Ð¸ Ð¾Ð½Ð»Ð°Ð¹Ð½-Ð¾Ð¿Ð»Ð°Ñ‚Ð°.</p>
-                </div>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button type="button" className="admin-secondary" onClick={exportOrdersCsv}>
-                    <FileSpreadsheet size={15} /> Ð’Ñ‹Ð³Ñ€ÑƒÐ·ÐºÐ° Ð² Excel (CSV)
-                  </button>
-                  <button type="button" className="admin-primary" onClick={loadData}>
-                    <RefreshCw size={15} /> ÐžÐ±Ð½Ð¾Ð²Ð¸Ñ‚ÑŒ
-                  </button>
-                </div>
-              </div>
-
-              {orders.length > 0 ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  {orders.map((o) => (
-                    <div
-                      key={o.id}
-                      style={{
-                        background: 'var(--adm-surface-alt)',
-                        border: '1px solid var(--adm-border)',
-                        borderRadius: '14px',
-                        padding: '18px',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '12px',
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
-                        <div>
-                          <strong style={{ fontSize: '16px', color: '#fff' }}>Ð—Ð°ÐºÐ°Ð· #{o.id}</strong>
-                          <span style={{ marginLeft: '12px', fontSize: '12px', color: '#8e9bb5' }}>
-                            {new Date(o.createdAt).toLocaleString('ru-RU')}
-                          </span>
-                        </div>
-
-                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                          <span
-                            style={{
-                              background: o.paymentStatus === 'paid' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
-                              color: o.paymentStatus === 'paid' ? '#34d399' : '#fbbf24',
-                              border: `1px solid ${o.paymentStatus === 'paid' ? '#10b981' : '#f59e0b'}`,
-                              padding: '4px 10px',
-                              borderRadius: '20px',
-                              fontSize: '11px',
-                              fontWeight: 800,
-                            }}
-                          >
-                            {o.paymentStatus === 'paid' ? 'âœ“ ÐžÐ¿Ð»Ð°Ñ‡ÐµÐ½ Ð¾Ð½Ð»Ð°Ð¹Ð½' : 'ÐžÐ¶Ð¸Ð´Ð°ÐµÑ‚ Ð¾Ð¿Ð»Ð°Ñ‚Ñ‹'}
-                          </span>
-
-                          <span
-                            style={{
-                              background: o.status === 'completed' ? 'rgba(59, 130, 246, 0.15)' : 'rgba(255,255,255,0.06)',
-                              color: o.status === 'completed' ? '#60a5fa' : '#fff',
-                              padding: '4px 10px',
-                              borderRadius: '20px',
-                              fontSize: '11px',
-                              fontWeight: 800,
-                            }}
-                          >
-                            Ð¡Ñ‚Ð°Ñ‚ÑƒÑ: {o.status === 'new' ? 'ÐÐ¾Ð²Ñ‹Ð¹' : o.status === 'processing' ? 'Ð’ Ð¾Ð±Ñ€Ð°Ð±Ð¾Ñ‚ÐºÐµ' : o.status === 'completed' ? 'Ð’Ñ‹Ð¿Ð¾Ð»Ð½ÐµÐ½' : 'ÐžÑ‚Ð¼ÐµÐ½ÐµÐ½'}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', background: '#0b0e14', padding: '12px 16px', borderRadius: '10px', fontSize: '13px' }}>
-                        <div>
-                          <span style={{ color: '#8e9bb5', fontSize: '11px', display: 'block' }}>ÐŸÐ¾ÐºÑƒÐ¿Ð°Ñ‚ÐµÐ»ÑŒ:</span>
-                          <strong>{o.customerName}</strong>
-                          <div style={{ color: '#38bdf8' }}>{o.customerPhone}</div>
-                        </div>
-
-                        <div>
-                          <span style={{ color: '#8e9bb5', fontSize: '11px', display: 'block' }}>Ð”Ð¾ÑÑ‚Ð°Ð²ÐºÐ°:</span>
-                          <strong>{o.deliveryType === 'delivery' ? 'ÐšÑƒÑ€ÑŒÐµÑ€ÑÐºÐ°Ñ Ð´Ð¾ÑÑ‚Ð°Ð²ÐºÐ°' : 'Ð¡Ð°Ð¼Ð¾Ð²Ñ‹Ð²Ð¾Ð·'}</strong>
-                          {o.deliveryAddress && <div style={{ color: '#cbd5e1' }}>{o.deliveryAddress}</div>}
-                        </div>
-
-                        <div>
-                          <span style={{ color: '#8e9bb5', fontSize: '11px', display: 'block' }}>Ð¡Ð¿Ð¾ÑÐ¾Ð± Ð¾Ð¿Ð»Ð°Ñ‚Ñ‹:</span>
-                          <strong>{o.paymentMethod === 'online' ? 'ÐšÐ°Ñ€Ñ‚Ð° Ð¾Ð½Ð»Ð°Ð¹Ð½ / Ð¡Ð‘ÐŸ' : o.paymentMethod === 'cash' ? 'ÐŸÑ€Ð¸ Ð¿Ð¾Ð»ÑƒÑ‡ÐµÐ½Ð¸Ð¸' : 'ÐŸÐµÑ€ÐµÐ²Ð¾Ð´ Ð½Ð° ÐºÐ°Ñ€Ñ‚Ñƒ'}</strong>
-                        </div>
-
-                        <div style={{ textAlign: 'right' }}>
-                          <span style={{ color: '#8e9bb5', fontSize: '11px', display: 'block' }}>Ð˜Ñ‚Ð¾Ð³Ð¾Ð²Ð°Ñ ÑÑƒÐ¼Ð¼Ð°:</span>
-                          <strong style={{ fontSize: '18px', color: '#10b981' }}>{money(o.total)}</strong>
-                        </div>
-                      </div>
-
-                      {/* Items */}
-                      <div style={{ fontSize: '12px', color: '#cbd5e1' }}>
-                        <strong>Ð¡Ð¾ÑÑ‚Ð°Ð² Ð·Ð°ÐºÐ°Ð·Ð°: </strong>
-                        {(o.items || []).map((it) => `${it.name} (Ã—${it.quantity})`).join(', ')}
-                      </div>
-
-                      {/* Status actions */}
-                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '4px' }}>
-                        {o.status !== 'processing' && (
-                          <button
-                            type="button"
-                            onClick={() => updateOrderStatus(o.id, 'processing')}
-                            className="admin-secondary"
-                            style={{ padding: '6px 12px', fontSize: '12px' }}
-                          >
-                            Ð’ Ð¾Ð±Ñ€Ð°Ð±Ð¾Ñ‚ÐºÑƒ
-                          </button>
-                        )}
-                        {o.status !== 'completed' && (
-                          <button
-                            type="button"
-                            onClick={() => updateOrderStatus(o.id, 'completed', 'paid')}
-                            className="admin-primary"
-                            style={{ padding: '6px 12px', fontSize: '12px', background: '#10b981' }}
-                          >
-                            âœ“ Ð—Ð°ÐºÐ°Ð· Ð²Ñ‹Ð¿Ð¾Ð»Ð½ÐµÐ½
-                          </button>
-                        )}
-                        {o.status !== 'cancelled' && (
-                          <button
-                            type="button"
-                            onClick={() => updateOrderStatus(o.id, 'cancelled')}
-                            className="admin-secondary"
-                            style={{ padding: '6px 12px', fontSize: '12px', color: '#ef4444' }}
-                          >
-                            âœ• ÐžÑ‚Ð¼ÐµÐ½Ð¸Ñ‚ÑŒ
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div style={{ textAlign: 'center', padding: '40px', color: '#8e9bb5' }}>
-                  ÐŸÐ¾ÐºÐ° Ð½ÐµÑ‚ Ð¾Ñ„Ð¾Ñ€Ð¼Ð»ÐµÐ½Ð½Ñ‹Ñ… Ð·Ð°ÐºÐ°Ð·Ð¾Ð². Ð¡Ð´ÐµÐ»Ð°Ð¹Ñ‚Ðµ Ñ‚ÐµÑÑ‚Ð¾Ð²Ñ‹Ð¹ Ð·Ð°ÐºÐ°Ð· Ð½Ð° Ð³Ð»Ð°Ð²Ð½Ð¾Ð¹ ÑÑ‚Ñ€Ð°Ð½Ð¸Ñ†Ðµ!
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ================= TAB 5: SERVICES (BOOKING) ================= */}
-          {tab === 'services' && (
-            <div className="admin-panel">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px', flexWrap: 'wrap', gap: '12px' }}>
-                <div>
-                  <h2>ÐŸÑ€Ð°Ð¹Ñ-Ð»Ð¸ÑÑ‚ ÑƒÑÐ»ÑƒÐ³ ({config.services.length} Ð¿Ð¾Ð·.)</h2>
-                  <p style={{ margin: 0 }}>ÐÐ°ÑÑ‚Ñ€Ð¾Ð¹Ñ‚Ðµ Ð¿ÐµÑ€ÐµÑ‡ÐµÐ½ÑŒ Ð¿Ñ€Ð¾Ñ†ÐµÐ´ÑƒÑ€, ÑÑ‚Ð¾Ð¸Ð¼Ð¾ÑÑ‚ÑŒ Ð¸ Ð´Ð»Ð¸Ñ‚ÐµÐ»ÑŒÐ½Ð¾ÑÑ‚ÑŒ Ð² Ð¼Ð¸Ð½ÑƒÑ‚Ð°Ñ….</p>
-                </div>
-                <button type="button" className="admin-primary" onClick={addService}>
-                  <Plus size={16} /> Ð”Ð¾Ð±Ð°Ð²Ð¸Ñ‚ÑŒ ÑƒÑÐ»ÑƒÐ³Ñƒ
-                </button>
-              </div>
-
-              {/* Controls */}
-              <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
-                <div style={{ flex: 1, minWidth: '220px', position: 'relative' }}>
-                  <input
-                    type="text"
-                    placeholder="ÐŸÐ¾Ð¸ÑÐº Ð¿Ð¾ ÑƒÑÐ»ÑƒÐ³Ð°Ð¼..."
-                    value={serviceSearch}
-                    onChange={(e) => setServiceSearch(e.target.value)}
-                    style={{ width: '100%', height: '40px', background: '#1c2230', border: '1px solid #2d3748', borderRadius: '10px', color: '#fff', padding: '0 12px 0 34px', boxSizing: 'border-box' }}
-                  />
-                  <Search size={15} style={{ position: 'absolute', left: '12px', top: '13px', color: '#8e9bb5' }} />
-                </div>
-
-                <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '4px' }}>
-                  <button
-                    type="button"
-                    className={`service-category-pill ${serviceCategoryFilter === 'all' ? 'active' : ''}`}
-                    onClick={() => setServiceCategoryFilter('all')}
-                  >
-                    Ð’ÑÐµ ({config.services.length})
-                  </button>
-                  {existingServiceCategories.map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      className={`service-category-pill ${serviceCategoryFilter === c ? 'active' : ''}`}
-                      onClick={() => setServiceCategoryFilter(c)}
-                    >
-                      {c}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {filteredAdminServices.map((s) => (
-                  <div
-                    key={s.id}
-                    style={{
-                      background: 'var(--adm-surface-alt)',
-                      border: '1px solid var(--adm-border)',
-                      borderRadius: '14px',
-                      padding: '16px',
-                      display: 'flex',
-                      gap: '16px',
-                      alignItems: 'center',
-                      flexWrap: 'wrap',
-                    }}
-                  >
-                    <div style={{ flex: '1 1 260px' }}>
-                      <input
-                        type="text"
-                        value={s.name}
-                        onChange={(e) => updateService(s.id, { name: e.target.value })}
-                        style={{ fontWeight: 800, fontSize: '15px', color: '#fff', background: 'transparent', border: 'none', borderBottom: '1px dashed #4b5563', padding: '2px 4px', width: '100%', marginBottom: '4px' }}
-                      />
-                      <input
-                        type="text"
-                        value={s.description}
-                        onChange={(e) => updateService(s.id, { description: e.target.value })}
-                        style={{ fontSize: '12px', color: '#8e9bb5', background: 'transparent', border: 'none', borderBottom: '1px dashed #374151', padding: '2px 4px', width: '100%' }}
-                      />
-                    </div>
-
-                    <div style={{ display: 'flex', gap: '10px' }}>
-                      <div>
-                        <label style={{ fontSize: '11px', color: '#8e9bb5', display: 'block' }}>Ð¦ÐµÐ½Ð°, â‚½</label>
-                        <input
-                          type="number"
-                          value={s.price}
-                          onChange={(e) => updateService(s.id, { price: Number(e.target.value) })}
-                          style={{ width: '90px', height: '36px', background: '#0b0e14', border: '1px solid #374151', borderRadius: '8px', color: '#38bdf8', fontWeight: 800, padding: '0 8px' }}
-                        />
-                      </div>
-
-                      <div>
-                        <label style={{ fontSize: '11px', color: '#8e9bb5', display: 'block' }}>Ð”Ð»Ð¸Ñ‚-Ñ‚ÑŒ (Ð¼Ð¸Ð½)</label>
-                        <input
-                          type="number"
-                          value={s.duration}
-                          onChange={(e) => updateService(s.id, { duration: Number(e.target.value) })}
-                          style={{ width: '80px', height: '36px', background: '#0b0e14', border: '1px solid #374151', borderRadius: '8px', color: '#fff', padding: '0 8px' }}
-                        />
-                      </div>
-
-                      <div>
-                        <label style={{ fontSize: '11px', color: '#8e9bb5', display: 'block' }}>ÐšÐ°Ñ‚ÐµÐ³Ð¾Ñ€Ð¸Ñ</label>
-                        <input
-                          type="text"
-                          value={s.category || ''}
-                          onChange={(e) => updateService(s.id, { category: e.target.value })}
-                          style={{ width: '110px', height: '36px', background: '#0b0e14', border: '1px solid #374151', borderRadius: '8px', color: '#fff', padding: '0 8px' }}
-                        />
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'flex', gap: '6px' }}>
-                      <button type="button" onClick={() => duplicateService(s)} className="admin-secondary" style={{ padding: '8px 12px' }}>
-                        <Copy size={14} />
-                      </button>
-                      <button type="button" onClick={() => removeService(s.id)} className="admin-secondary" style={{ padding: '8px 12px', color: '#ef4444' }}>
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* ================= TAB 6: BOOKINGS ================= */}
-          {tab === 'bookings' && (
-            <div className="admin-panel">
-              <BookingCalendar
-                bookings={bookings}
-                config={config}
-                onCreated={loadData}
-              />
-            </div>
-          )}
-
-          {/* ================= TAB 7: DESIGN & COLORS ================= */}
-          {tab === 'design' && (
-            <div className="admin-panel">
-              <h2>Ð¦Ð²ÐµÑ‚Ð°, Ð¾Ñ‚Ñ‚ÐµÐ½ÐºÐ¸ Ð¸ Ñ„Ð¾Ñ‚Ð¾Ð³Ñ€Ð°Ñ„Ð¸Ð¸ Ð¾Ð±Ð»Ð¾Ð¶ÐºÐ¸</h2>
-              <p>ÐÐ°ÑÑ‚Ñ€Ð¾Ð¹Ñ‚Ðµ Ð¸Ð½Ð´Ð¸Ð²Ð¸Ð´ÑƒÐ°Ð»ÑŒÐ½Ñ‹Ð¹ Ñ„Ð¸Ñ€Ð¼ÐµÐ½Ð½Ñ‹Ð¹ ÑÑ‚Ð¸Ð»ÑŒ ÑÐ°Ð¹Ñ‚Ð° Ð¿Ð¾Ð´ Ð²Ð°ÑˆÐµÐ³Ð¾ ÐºÐ»Ð¸ÐµÐ½Ñ‚Ð° Ð·Ð° Ð¿Ð°Ñ€Ñƒ ÐºÐ»Ð¸ÐºÐ¾Ð².</p>
-
-              {/* Exact Custom HEX Color Picker */}
-              <div style={{ background: '#0b0e14', border: '1px solid #262f42', borderRadius: '16px', padding: '20px', marginBottom: '24px' }}>
-                <h3 style={{ margin: '0 0 8px', fontSize: '16px' }}>ðŸŽ¨ Ð’Ñ‹Ð±Ð¾Ñ€ Ñ„Ð¸Ñ€Ð¼ÐµÐ½Ð½Ð¾Ð³Ð¾ Ð¾Ñ‚Ñ‚ÐµÐ½ÐºÐ° (Ð›ÑŽÐ±Ð¾Ð¹ Ñ†Ð²ÐµÑ‚ Ð¿Ð¾ HEX / Ð¿Ð¸Ð¿ÐµÑ‚ÐºÐµ)</h3>
-                <p style={{ fontSize: '13px', color: '#8e9bb5', margin: '0 0 16px' }}>
-                  ÐšÐ½Ð¾Ð¿ÐºÐ¸, Ð±ÐµÐ¹Ð´Ð¶Ð¸, Ð°ÐºÑ†ÐµÐ½Ñ‚Ñ‹ Ð¸ Ð¸ÐºÐ¾Ð½ÐºÐ¸ Ð¼Ð¾Ð¼ÐµÐ½Ñ‚Ð°Ð»ÑŒÐ½Ð¾ Ð°Ð´Ð°Ð¿Ñ‚Ð¸Ñ€ÑƒÑŽÑ‚ÑÑ Ð¿Ð¾Ð´ Ð²Ñ‹Ð±Ñ€Ð°Ð½Ð½Ñ‹Ð¹ Ñ†Ð²ÐµÑ‚.
-                </p>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <input
-                      type="color"
-                      value={activeColor}
-                      onChange={(e) => updateField('customAccent', e.target.value)}
-                      style={{ width: '48px', height: '48px', borderRadius: '12px', border: '2px solid #3b4763', cursor: 'pointer', background: 'transparent' }}
-                    />
-                    <input
-                      type="text"
-                      value={config.customAccent || activeColor}
-                      onChange={(e) => updateField('customAccent', e.target.value)}
-                      placeholder="#3b82f6"
-                      style={{ width: '110px', height: '44px', background: '#1c2230', border: '1px solid #374151', borderRadius: '10px', color: '#fff', fontWeight: 800, padding: '0 12px', fontFamily: 'monospace' }}
-                    />
-                  </div>
-
-                  {/* Quick palette buttons */}
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                    {quickPaletteColors.map((c) => (
-                      <button
-                        key={c.hex}
-                        type="button"
-                        onClick={() => updateField('customAccent', c.hex)}
-                        style={{
-                          width: '32px',
-                          height: '32px',
-                          borderRadius: '50%',
-                          backgroundColor: c.hex,
-                          border: activeColor.toLowerCase() === c.hex.toLowerCase() ? '3px solid #fff' : '2px solid transparent',
-                          cursor: 'pointer',
-                        }}
-                        title={c.label}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Ready Theme Swatches */}
-              <h3 style={{ margin: '24px 0 12px', fontSize: '16px' }}>Ð“Ð¾Ñ‚Ð¾Ð²Ñ‹Ðµ Ð¿Ñ€ÐµÐ¼Ð¸Ð°Ð»ÑŒÐ½Ñ‹Ðµ Ð¿Ð°Ð»Ð¸Ñ‚Ñ€Ñ‹</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '12px', marginBottom: '24px' }}>
-                {themeSwatches.map((t) => (
-                  <div
-                    key={t.key}
-                    onClick={() => {
-                      updateField('theme', t.key);
-                      updateField('customAccent', t.accentColor);
-                    }}
-                    style={{
-                      background: '#141822',
-                      border: config.theme === t.key ? '2px solid #2563eb' : '1px solid #262f42',
-                      borderRadius: '12px',
-                      padding: '14px',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
-                      <span style={{ width: '18px', height: '18px', borderRadius: '50%', backgroundColor: t.accentColor }} />
-                      <strong>{t.title}</strong>
-                    </div>
-                    <small style={{ color: '#8e9bb5', fontSize: '11px' }}>{t.desc}</small>
-                  </div>
-                ))}
-              </div>
-
-              {/* Hero Image Selection */}
-              <h3 style={{ margin: '24px 0 12px', fontSize: '16px' }}>Ð“Ð»Ð°Ð²Ð½Ð°Ñ Ð¾Ð±Ð»Ð¾Ð¶ÐºÐ° ÑÐ°Ð¹Ñ‚Ð° (Hero Banner)</h3>
-              <div style={{ marginBottom: '16px' }}>
-                <label style={{ fontSize: '12px', color: '#8e9bb5', display: 'block', marginBottom: '6px' }}>ÐŸÑ€ÑÐ¼Ð°Ñ ÑÑÑ‹Ð»ÐºÐ° Ð½Ð° Ñ„Ð¾Ñ‚Ð¾ (URL):</label>
-                <input
-                  type="text"
-                  value={config.heroUrl}
-                  onChange={(e) => updateField('heroUrl', e.target.value)}
-                  style={{ width: '100%', height: '44px', background: '#0b0e14', border: '1px solid #262f42', borderRadius: '10px', color: '#fff', padding: '0 14px' }}
-                />
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '10px' }}>
-                {photoPresets.map((p) => (
-                  <div
-                    key={p.url}
-                    onClick={() => updateField('heroUrl', p.url)}
-                    style={{
-                      borderRadius: '12px',
-                      overflow: 'hidden',
-                      border: config.heroUrl === p.url ? '2px solid #2563eb' : '1px solid #262f42',
-                      cursor: 'pointer',
-                      position: 'relative',
-                      height: '110px',
-                    }}
-                  >
-                    <img src={p.url} alt={p.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.8), transparent)', display: 'flex', alignItems: 'flex-end', padding: '8px' }}>
-                      <span style={{ fontSize: '11px', fontWeight: 700, color: '#fff' }}>{p.title}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* ================= TAB 8: CONTACTS & DELIVERY ================= */}
-          {tab === 'contacts' && (
-            <div className="admin-panel">
-              <h2>ÐšÐ¾Ð½Ñ‚Ð°ÐºÑ‚Ñ‹, Ð³Ñ€Ð°Ñ„Ð¸Ðº Ñ€Ð°Ð±Ð¾Ñ‚Ñ‹ Ð¸ ÑƒÑÐ»Ð¾Ð²Ð¸Ñ Ð´Ð¾ÑÑ‚Ð°Ð²ÐºÐ¸</h2>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginTop: '16px' }}>
-                <div>
-                  <label className="input-label">ÐÐ°Ð·Ð²Ð°Ð½Ð¸Ðµ ÐºÐ¾Ð¼Ð¿Ð°Ð½Ð¸Ð¸:</label>
-                  <input
-                    type="text"
-                    value={config.name}
-                    onChange={(e) => updateField('name', e.target.value)}
-                    style={{ width: '100%', height: '44px', background: '#0b0e14', border: '1px solid #262f42', borderRadius: '10px', color: '#fff', padding: '0 12px' }}
-                  />
-                </div>
-
-                <div>
-                  <label className="input-label">Ð¡Ð»Ð¾Ð³Ð°Ð½ / ÐžÐ¿Ð¸ÑÐ°Ð½Ð¸Ðµ:</label>
-                  <input
-                    type="text"
-                    value={config.tagline}
-                    onChange={(e) => updateField('tagline', e.target.value)}
-                    style={{ width: '100%', height: '44px', background: '#0b0e14', border: '1px solid #262f42', borderRadius: '10px', color: '#fff', padding: '0 12px' }}
-                  />
-                </div>
-
-                <div>
-                  <label className="input-label">Ð¢ÐµÐ»ÐµÑ„Ð¾Ð½ Ð´Ð»Ñ ÑÐ²ÑÐ·Ð¸:</label>
-                  <input
-                    type="text"
-                    value={config.phone}
-                    onChange={(e) => updateField('phone', e.target.value)}
-                    style={{ width: '100%', height: '44px', background: '#0b0e14', border: '1px solid #262f42', borderRadius: '10px', color: '#fff', padding: '0 12px' }}
-                  />
-                </div>
-
-                <div>
-                  <label className="input-label">ÐÐ´Ñ€ÐµÑ ÑˆÐ¾ÑƒÑ€ÑƒÐ¼Ð° / ÑÐ°Ð»Ð¾Ð½Ð°:</label>
-                  <input
-                    type="text"
-                    value={config.address}
-                    onChange={(e) => updateField('address', e.target.value)}
-                    style={{ width: '100%', height: '44px', background: '#0b0e14', border: '1px solid #262f42', borderRadius: '10px', color: '#fff', padding: '0 12px' }}
-                  />
-                </div>
-
-                <div>
-                  <label className="input-label">Telegram (ÑŽÐ·ÐµÑ€Ð½ÐµÐ¹Ð¼ Ð±ÐµÐ· @):</label>
-                  <input
-                    type="text"
-                    value={config.telegram || ''}
-                    placeholder="my_company"
-                    onChange={(e) => updateField('telegram', e.target.value)}
-                    style={{ width: '100%', height: '44px', background: '#0b0e14', border: '1px solid #262f42', borderRadius: '10px', color: '#fff', padding: '0 12px' }}
-                  />
-                </div>
-
-                <div>
-                  <label className="input-label">WhatsApp (Ð½Ð¾Ð¼ÐµÑ€ Ñ‚ÐµÐ»ÐµÑ„Ð¾Ð½Ð°):</label>
-                  <input
-                    type="text"
-                    value={config.whatsapp || ''}
-                    placeholder="+79990001122"
-                    onChange={(e) => updateField('whatsapp', e.target.value)}
-                    style={{ width: '100%', height: '44px', background: '#0b0e14', border: '1px solid #262f42', borderRadius: '10px', color: '#fff', padding: '0 12px' }}
-                  />
-                </div>
-
-                <div>
-                  <label className="input-label">Ð¡Ñ‚Ð¾Ð¸Ð¼Ð¾ÑÑ‚ÑŒ Ð´Ð¾ÑÑ‚Ð°Ð²ÐºÐ¸ ÐºÑƒÑ€ÑŒÐµÑ€Ð¾Ð¼ (â‚½):</label>
-                  <input
-                    type="number"
-                    value={config.deliveryCost || 350}
-                    onChange={(e) => updateField('deliveryCost', Number(e.target.value))}
-                    style={{ width: '100%', height: '44px', background: '#0b0e14', border: '1px solid #262f42', borderRadius: '10px', color: '#fff', padding: '0 12px' }}
-                  />
-                </div>
-
-                <div>
-                  <label className="input-label">Ð‘ÐµÑÐ¿Ð»Ð°Ñ‚Ð½Ð°Ñ Ð´Ð¾ÑÑ‚Ð°Ð²ÐºÐ° Ð¾Ñ‚ ÑÑƒÐ¼Ð¼Ñ‹ (â‚½):</label>
-                  <input
-                    type="number"
-                    value={config.freeDeliveryThreshold || 5000}
-                    onChange={(e) => updateField('freeDeliveryThreshold', Number(e.target.value))}
-                    style={{ width: '100%', height: '44px', background: '#0b0e14', border: '1px solid #262f42', borderRadius: '10px', color: '#fff', padding: '0 12px' }}
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ================= TAB 9: PAYMENTS & GATEWAYS ================= */}
-          {tab === 'payments' && (
-            <div className="admin-panel">
-              <h2>Ð¡Ð¿Ð¾ÑÐ¾Ð±Ñ‹ Ð¿Ñ€Ð¸Ñ‘Ð¼Ð° Ð¾Ð¿Ð»Ð°Ñ‚Ñ‹ Ð¸ Ð¿Ð¾Ð´ÐºÐ»ÑŽÑ‡ÐµÐ½Ð¸Ðµ ÑÐºÐ²Ð°Ð¹Ñ€Ð¸Ð½Ð³Ð°</h2>
-              <p>ÐÐ°ÑÑ‚Ñ€Ð¾Ð¹Ñ‚Ðµ Ð¿Ð»Ð°Ñ‚ÐµÐ¶Ð½Ñ‹Ðµ ÑÐ¸ÑÑ‚ÐµÐ¼Ñ‹ (Ð®Kassa, Ð¢-Ð‘Ð°Ð½Ðº, Ð¡Ð‘ÐŸ, ÐÐ°Ð»Ð¸Ñ‡Ð½Ñ‹Ðµ) Ð´Ð»Ñ Ð°Ð²Ñ‚Ð¾Ð¼Ð°Ñ‚Ð¸Ñ‡ÐµÑÐºÐ¾Ð³Ð¾ Ð¿Ñ€Ð¸Ñ‘Ð¼Ð° Ð¿Ð»Ð°Ñ‚ÐµÐ¶ÐµÐ¹.</p>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '18px', maxWidth: '680px', marginTop: '16px' }}>
-                {/* 1. Online Card / Bank Cards */}
-                <div style={{ background: '#0b0e14', padding: '18px', borderRadius: '14px', border: '1px solid #262f42' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <CreditCard size={24} color="#38bdf8" />
-                      <div>
-                        <strong style={{ fontSize: '15px' }}>Ð‘Ð°Ð½ÐºÐ¾Ð²ÑÐºÐ¸Ðµ ÐºÐ°Ñ€Ñ‚Ñ‹ Ð¾Ð½Ð»Ð°Ð¹Ð½ (ÐœÐ˜Ð , Visa, Mastercard)</strong>
-                        <div style={{ fontSize: '12px', color: '#8e9bb5' }}>ÐŸÑ€Ð¸Ñ‘Ð¼ Ð¿Ð»Ð°Ñ‚ÐµÐ¶ÐµÐ¹ Ñ‡ÐµÑ€ÐµÐ· Ð®Kassa Ð¸Ð»Ð¸ Ð¢-Ð‘Ð°Ð½Ðº ÐžÐ¿Ð»Ð°Ñ‚Ñƒ</div>
-                      </div>
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={config.paymentMethods?.onlineCard !== false}
-                      onChange={(e) =>
-                        updateField('paymentMethods', {
-                          ...(config.paymentMethods || { onlineCard: true, sbpOnline: true, cashOnDelivery: true, cardTransfer: true }),
-                          onlineCard: e.target.checked,
-                        })
-                      }
-                      style={{ width: '20px', height: '20px' }}
-                    />
-                  </label>
-
-                  {config.paymentMethods?.onlineCard !== false && (
-                    <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: '1px solid #1c2230', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                      <div>
-                        <label style={{ fontSize: '11px', color: '#8e9bb5', display: 'block', marginBottom: '4px' }}>
-                          Ð®Kassa Shop ID (ÐœÐ°Ð³Ð°Ð·Ð¸Ð½):
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="ÐÐ°Ð¿Ñ€Ð¸Ð¼ÐµÑ€: 123456"
-                          value={config.paymentMethods?.yookassaShopId || ''}
-                          onChange={(e) =>
-                            updateField('paymentMethods', {
-                              ...(config.paymentMethods || { onlineCard: true, sbpOnline: true, cashOnDelivery: true, cardTransfer: true }),
-                              yookassaShopId: e.target.value,
-                            })
-                          }
-                          style={{ width: '100%', height: '38px', background: '#141822', border: '1px solid #262f42', borderRadius: '8px', color: '#fff', padding: '0 10px', fontSize: '13px', boxSizing: 'border-box' }}
-                        />
-                      </div>
-                      <div>
-                        <label style={{ fontSize: '11px', color: '#8e9bb5', display: 'block', marginBottom: '4px' }}>
-                          Ð¡ÐµÐºÑ€ÐµÑ‚Ð½Ñ‹Ð¹ ÐºÐ»ÑŽÑ‡ API:
-                        </label>
-                        <input
-                          type="password"
-                          placeholder="live_... Ð¸Ð»Ð¸ test_..."
-                          value={config.paymentMethods?.yookassaSecretKey || ''}
-                          onChange={(e) =>
-                            updateField('paymentMethods', {
-                              ...(config.paymentMethods || { onlineCard: true, sbpOnline: true, cashOnDelivery: true, cardTransfer: true }),
-                              yookassaSecretKey: e.target.value,
-                            })
-                          }
-                          style={{ width: '100%', height: '38px', background: '#141822', border: '1px solid #262f42', borderRadius: '8px', color: '#fff', padding: '0 10px', fontSize: '13px', boxSizing: 'border-box' }}
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* 2. SBP Online */}
-                <div style={{ background: '#0b0e14', padding: '18px', borderRadius: '14px', border: '1px solid #262f42' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <Tag size={24} color="#f59e0b" />
-                      <div>
-                        <strong style={{ fontSize: '15px' }}>Ð¡Ð¸ÑÑ‚ÐµÐ¼Ð° Ð‘Ñ‹ÑÑ‚Ñ€Ñ‹Ñ… ÐŸÐ»Ð°Ñ‚ÐµÐ¶ÐµÐ¹ (Ð¡Ð‘ÐŸ Ð¿Ð¾ QR-ÐºÐ¾Ð´Ñƒ)</strong>
-                        <div style={{ fontSize: '12px', color: '#8e9bb5' }}>ÐšÐ»Ð¸ÐµÐ½Ñ‚ ÑÐºÐ°Ð½Ð¸Ñ€ÑƒÐµÑ‚ QR-ÐºÐ¾Ð´ Ð¸ Ð¾Ð¿Ð»Ð°Ñ‡Ð¸Ð²Ð°ÐµÑ‚ Ð±ÐµÐ· Ð²Ð²Ð¾Ð´Ð° Ð´Ð°Ð½Ð½Ñ‹Ñ… ÐºÐ°Ñ€Ñ‚Ñ‹</div>
-                      </div>
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={config.paymentMethods?.sbpOnline !== false}
-                      onChange={(e) =>
-                        updateField('paymentMethods', {
-                          ...(config.paymentMethods || { onlineCard: true, sbpOnline: true, cashOnDelivery: true, cardTransfer: true }),
-                          sbpOnline: e.target.checked,
-                        })
-                      }
-                      style={{ width: '20px', height: '20px' }}
-                    />
-                  </label>
-
-                  {config.paymentMethods?.sbpOnline !== false && (
-                    <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: '1px solid #1c2230', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                      <div>
-                        <label style={{ fontSize: '11px', color: '#8e9bb5', display: 'block', marginBottom: '4px' }}>
-                          ÐÐ¾Ð¼ÐµÑ€ Ñ‚ÐµÐ»ÐµÑ„Ð¾Ð½Ð° Ð´Ð»Ñ Ð¡Ð‘ÐŸ:
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="+7 (999) 000-00-00"
-                          value={config.paymentMethods?.sbpPhone || config.phone || ''}
-                          onChange={(e) =>
-                            updateField('paymentMethods', {
-                              ...(config.paymentMethods || { onlineCard: true, sbpOnline: true, cashOnDelivery: true, cardTransfer: true }),
-                              sbpPhone: e.target.value,
-                            })
-                          }
-                          style={{ width: '100%', height: '38px', background: '#141822', border: '1px solid #262f42', borderRadius: '8px', color: '#fff', padding: '0 10px', fontSize: '13px', boxSizing: 'border-box' }}
-                        />
-                      </div>
-                      <div>
-                        <label style={{ fontSize: '11px', color: '#8e9bb5', display: 'block', marginBottom: '4px' }}>
-                          Ð‘Ð°Ð½Ðº Ð¿Ð¾Ð»ÑƒÑ‡Ð°Ñ‚ÐµÐ»Ñ:
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="Ð¢-Ð‘Ð°Ð½Ðº / Ð¡Ð±ÐµÑ€ / ÐÐ»ÑŒÑ„Ð°"
-                          value={config.paymentMethods?.sbpBankName || 'Ð¢-Ð‘Ð°Ð½Ðº'}
-                          onChange={(e) =>
-                            updateField('paymentMethods', {
-                              ...(config.paymentMethods || { onlineCard: true, sbpOnline: true, cashOnDelivery: true, cardTransfer: true }),
-                              sbpBankName: e.target.value,
-                            })
-                          }
-                          style={{ width: '100%', height: '38px', background: '#141822', border: '1px solid #262f42', borderRadius: '8px', color: '#fff', padding: '0 10px', fontSize: '13px', boxSizing: 'border-box' }}
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* 3. Cash on delivery */}
-                <div style={{ background: '#0b0e14', padding: '18px', borderRadius: '14px', border: '1px solid #262f42' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <Truck size={24} color="#10b981" />
-                      <div>
-                        <strong style={{ fontSize: '15px' }}>ÐžÐ¿Ð»Ð°Ñ‚Ð° Ð¿Ñ€Ð¸ Ð¿Ð¾Ð»ÑƒÑ‡ÐµÐ½Ð¸Ð¸ (ÐÐ°Ð»Ð¸Ñ‡Ð½Ñ‹Ð¼Ð¸ Ð¸Ð»Ð¸ ÐºÑƒÑ€ÑŒÐµÑ€Ñƒ)</strong>
-                        <div style={{ fontSize: '12px', color: '#8e9bb5' }}>ÐŸÐ¾ÐºÑƒÐ¿Ð°Ñ‚ÐµÐ»ÑŒ Ð¾Ð¿Ð»Ð°Ñ‡Ð¸Ð²Ð°ÐµÑ‚ Ð·Ð°ÐºÐ°Ð· Ð¿Ñ€Ð¸ Ð²Ñ‹Ð´Ð°Ñ‡Ðµ Ð¸Ð»Ð¸ Ð²Ð¸Ð·Ð¸Ñ‚Ðµ</div>
-                      </div>
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={config.paymentMethods?.cashOnDelivery !== false}
-                      onChange={(e) =>
-                        updateField('paymentMethods', {
-                          ...(config.paymentMethods || { onlineCard: true, sbpOnline: true, cashOnDelivery: true, cardTransfer: true }),
-                          cashOnDelivery: e.target.checked,
-                        })
-                      }
-                      style={{ width: '20px', height: '20px' }}
-                    />
-                  </label>
-                </div>
-
-                {/* 4. Sandbox / Test mode toggle */}
-                <div style={{ background: 'rgba(59, 130, 246, 0.08)', padding: '16px', borderRadius: '14px', border: '1px solid rgba(59, 130, 246, 0.3)' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
-                    <div>
-                      <strong style={{ color: '#93c5fd' }}>ðŸ§ª Ð¢ÐµÑÑ‚Ð¾Ð²Ñ‹Ð¹ Ñ€ÐµÐ¶Ð¸Ð¼ Ð¾Ð¿Ð»Ð°Ñ‚Ñ‹ (Ð”ÐµÐ¼Ð¾-ÑˆÐ»ÑŽÐ·)</strong>
-                      <div style={{ fontSize: '12px', color: '#cbd5e1' }}>
-                        ÐŸÐ¾Ð·Ð²Ð¾Ð»ÑÐµÑ‚ ÐºÐ»Ð¸ÐµÐ½Ñ‚Ð°Ð¼ Ð¸ Ð²Ð°Ð¼ Ð¿Ñ€Ð¾Ð²ÐµÑ€ÑÑ‚ÑŒ Ð¾Ñ„Ð¾Ñ€Ð¼Ð»ÐµÐ½Ð¸Ðµ Ð¸ Ð¾Ð¿Ð»Ð°Ñ‚Ñƒ Ð±ÐµÐ· ÑÐ¿Ð¸ÑÐ°Ð½Ð¸Ñ Ñ€ÐµÐ°Ð»ÑŒÐ½Ñ‹Ñ… Ñ€ÑƒÐ±Ð»ÐµÐ¹.
-                      </div>
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={config.paymentMethods?.testMode !== false}
-                      onChange={(e) =>
-                        updateField('paymentMethods', {
-                          ...(config.paymentMethods || { onlineCard: true, sbpOnline: true, cashOnDelivery: true, cardTransfer: true }),
-                          testMode: e.target.checked,
-                        })
-                      }
-                      style={{ width: '20px', height: '20px' }}
-                    />
-                  </label>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ================= TAB 10: SECURITY (PASSWORD MANAGEMENT) ================= */}
-          {tab === 'security' && (
-            <div className="admin-panel">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-                <div style={{ width: '42px', height: '42px', borderRadius: '12px', background: 'rgba(59, 130, 246, 0.15)', display: 'grid', placeItems: 'center', color: '#60a5fa' }}>
-                  <ShieldCheck size={24} />
-                </div>
-                <div>
-                  <h2 style={{ margin: 0 }}>ÐŸÐ°Ñ€Ð¾Ð»ÑŒ Ð¸ Ð±ÐµÐ·Ð¾Ð¿Ð°ÑÐ½Ð¾ÑÑ‚ÑŒ Ð¿Ð°Ð½ÐµÐ»Ð¸</h2>
-                  <p style={{ margin: 0, color: '#8e9bb5', fontSize: '13px' }}>
-                    Ð¡Ð¼ÐµÐ½Ð° Ð¿Ð°Ñ€Ð¾Ð»Ñ Ð´Ð¾ÑÑ‚ÑƒÐ¿Ð° Ðº Ð¿Ð°Ð½ÐµÐ»Ð¸ ÑƒÐ¿Ñ€Ð°Ð²Ð»ÐµÐ½Ð¸Ñ Ð¼Ð°Ð³Ð°Ð·Ð¸Ð½Ð¾Ð¼
-                  </p>
-                </div>
-              </div>
-
-              <div style={{ background: '#0b0e14', border: '1px solid #262f42', borderRadius: '16px', padding: '24px', maxWidth: '520px', marginTop: '20px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '18px', padding: '12px 16px', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: '10px', color: '#34d399', fontSize: '13px' }}>
-                  <KeyRound size={18} />
-                  <span>
-                    ÐŸÐ°Ð½ÐµÐ»ÑŒ Ð·Ð°Ñ‰Ð¸Ñ‰ÐµÐ½Ð°: Ð¿Ð°Ñ€Ð¾Ð»ÑŒ <strong>{config.adminPassword ? 'Ð¸Ð·Ð¼ÐµÐ½ÐµÐ½ Ð²Ð»Ð°Ð´ÐµÐ»ÑŒÑ†ÐµÐ¼' : 'Ð¿Ð¾ ÑƒÐ¼Ð¾Ð»Ñ‡Ð°Ð½Ð¸ÑŽ: 12345'}</strong>
-                  </span>
-                </div>
-
-                <form onSubmit={handleChangePassword}>
-                  <div style={{ marginBottom: '16px' }}>
-                    <label className="input-label" style={{ marginBottom: '6px', display: 'block' }}>
-                      ÐÐ¾Ð²Ñ‹Ð¹ Ð¿Ð°Ñ€Ð¾Ð»ÑŒ Ð°Ð´Ð¼Ð¸Ð½Ð¸ÑÑ‚Ñ€Ð°Ñ‚Ð¾Ñ€Ð°:
-                    </label>
-                    <input
-                      type="password"
-                      placeholder="Ð’Ð²ÐµÐ´Ð¸Ñ‚Ðµ Ð½Ð¾Ð²Ñ‹Ð¹ Ð¿Ð°Ñ€Ð¾Ð»ÑŒ..."
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                      style={{ width: '100%', height: '44px', background: '#141822', border: '1px solid #262f42', borderRadius: '10px', color: '#fff', padding: '0 14px', boxSizing: 'border-box' }}
-                    />
-                  </div>
-
-                  <div style={{ marginBottom: '20px' }}>
-                    <label className="input-label" style={{ marginBottom: '6px', display: 'block' }}>
-                      ÐŸÐ¾Ð²Ñ‚Ð¾Ñ€Ð¸Ñ‚Ðµ Ð½Ð¾Ð²Ñ‹Ð¹ Ð¿Ð°Ñ€Ð¾Ð»ÑŒ:
-                    </label>
-                    <input
-                      type="password"
-                      placeholder="ÐŸÐ¾Ð²Ñ‚Ð¾Ñ€Ð¸Ñ‚Ðµ Ð½Ð¾Ð²Ñ‹Ð¹ Ð¿Ð°Ñ€Ð¾Ð»ÑŒ..."
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      style={{ width: '100%', height: '44px', background: '#141822', border: '1px solid #262f42', borderRadius: '10px', color: '#fff', padding: '0 14px', boxSizing: 'border-box' }}
-                    />
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={saving}
-                    className="admin-primary"
-                    style={{ width: '100%', height: '44px', justifyContent: 'center' }}
-                  >
-                    <Save size={16} /> Ð¡Ð¾Ñ…Ñ€Ð°Ð½Ð¸Ñ‚ÑŒ Ð¸ Ð¾Ð±Ð½Ð¾Ð²Ð¸Ñ‚ÑŒ Ð¿Ð°Ñ€Ð¾Ð»ÑŒ
-                  </button>
-                </form>
-
-                <div style={{ marginTop: '16px', fontSize: '12px', color: '#8e9bb5', lineHeight: 1.5, background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '10px', border: '1px solid #1c2230' }}>
-                  ðŸ’¡ <strong>Ð’Ð°Ð¶Ð½Ð¾:</strong> Ð’Ñ‹ Ð¼Ð¾Ð¶ÐµÑ‚Ðµ Ð² Ð»ÑŽÐ±Ð¾Ð¹ Ð¼Ð¾Ð¼ÐµÐ½Ñ‚ Ð¸Ð·Ð¼ÐµÐ½Ð¸Ñ‚ÑŒ Ð¿Ð°Ñ€Ð¾Ð»ÑŒ Ð¿Ñ€ÑÐ¼Ð¾ Ð·Ð´ÐµÑÑŒ. ÐŸÐ¾ÑÐ»Ðµ ÑÐ¾Ñ…Ñ€Ð°Ð½ÐµÐ½Ð¸Ñ Ð¿Ð°Ñ€Ð¾Ð»ÑŒ ÑÑ€Ð°Ð·Ñƒ Ð²ÑÑ‚ÑƒÐ¿Ð°ÐµÑ‚ Ð² ÑÐ¸Ð»Ñƒ.
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ================= TAB 10: GUIDE & DEPLOYMENT ================= */}
-          {tab === 'guide' && (
-            <div className="admin-panel guide-container">
-              <h2>Ð ÑƒÐºÐ¾Ð²Ð¾Ð´ÑÑ‚Ð²Ð¾ Ð¿Ð¾ Ð·Ð°Ð¿ÑƒÑÐºÑƒ, Ð¿Ñ€Ð¾Ð´Ð°Ð¶Ðµ Ð¸ Ñ…Ð¾ÑÑ‚Ð¸Ð½Ð³Ñƒ ÑÐ°Ð¹Ñ‚Ð°</h2>
-              <p>ÐŸÐ¾ÑˆÐ°Ð³Ð¾Ð²Ð°Ñ Ð¸Ð½ÑÑ‚Ñ€ÑƒÐºÑ†Ð¸Ñ, ÐºÐ°Ðº Ð¿Ñ€Ð¾Ð´Ð°Ð²Ð°Ñ‚ÑŒ ÑÑ‚Ð¾Ñ‚ ÑˆÐ°Ð±Ð»Ð¾Ð½ Ñ€Ð°Ð·Ð½Ñ‹Ð¼ ÐºÐ»Ð¸ÐµÐ½Ñ‚Ð°Ð¼ Ð¸ Ð·Ð°Ñ€Ð°Ð±Ð°Ñ‚Ñ‹Ð²Ð°Ñ‚ÑŒ Ð½Ð° Ð²Ð½ÐµÐ´Ñ€ÐµÐ½Ð¸Ð¸.</p>
-
-              <div className="guide-step-card">
-                <div className="guide-step-number">1</div>
-                <div className="guide-step-content">
-                  <h3>ÐšÐ°Ðº Ð¿Ð¾Ð´Ð³Ð¾Ñ‚Ð¾Ð²Ð¸Ñ‚ÑŒ ÑÐ°Ð¹Ñ‚ Ð¿Ð¾Ð´ Ð½Ð¾Ð²Ð¾Ð³Ð¾ Ð·Ð°ÐºÐ°Ð·Ñ‡Ð¸ÐºÐ° (Ð¡Ñ…ÐµÐ¼Ð° Ñ€Ð°Ð±Ð¾Ñ‚Ñ‹)</h3>
-                  <ul>
-                    <li>
-                      <strong>Ð¨Ð°Ð³ 1:</strong> Ð’ÐºÐ»ÑŽÑ‡Ð¸Ñ‚Ðµ Ð²Ð²ÐµÑ€Ñ…Ñƒ <strong>Â«Ð ÐµÐ¶Ð¸Ð¼ Ð Ð°Ð·Ñ€Ð°Ð±Ð¾Ñ‚Ñ‡Ð¸ÐºÐ°Â»</strong>.
-                    </li>
-                    <li>
-                      <strong>Ð¨Ð°Ð³ 2:</strong> Ð’Ñ‹Ð±ÐµÑ€Ð¸Ñ‚Ðµ Ð¾Ñ‚Ñ€Ð°ÑÐ»ÑŒ Ð½Ð° Ð²ÐºÐ»Ð°Ð´ÐºÐµ Â«Ð“Ð¾Ñ‚Ð¾Ð²Ñ‹Ðµ Ð½Ð¸ÑˆÐ¸Â» (ÐœÐ°Ð³Ð°Ð·Ð¸Ð½, ÐÐ²Ñ‚Ð¾ÑÐ°Ð»Ð¾Ð½, Ð‘Ð°Ñ€Ð±ÐµÑ€ÑˆÐ¾Ð¿, Ð¡Ð¿Ð° Ð¸ Ñ‚.Ð´.) Ð¸Ð»Ð¸ Ð²Ñ‹Ð±ÐµÑ€Ð¸Ñ‚Ðµ Ñ‚Ð¸Ð¿: <em>Ð¢Ð¾Ð»ÑŒÐºÐ¾ ÐœÐ°Ð³Ð°Ð·Ð¸Ð½ Ñ ÐšÐ¾Ñ€Ð·Ð¸Ð½Ð¾Ð¹</em> Ð¸Ð»Ð¸ <em>Ð¢Ð¾Ð»ÑŒÐºÐ¾ Ð£ÑÐ»ÑƒÐ³Ð¸</em>.
-                    </li>
-                    <li>
-                      <strong>Ð¨Ð°Ð³ 3:</strong> ÐÐ°Ð¶Ð¼Ð¸Ñ‚Ðµ ÐºÐ½Ð¾Ð¿ÐºÑƒ <strong>Â«ðŸ”’ Ð—Ð°Ñ„Ð¸ÐºÑÐ¸Ñ€Ð¾Ð²Ð°Ñ‚ÑŒ Ð¸ Ð¾Ñ‚Ð´Ð°Ñ‚ÑŒ ÐºÐ»Ð¸ÐµÐ½Ñ‚ÑƒÂ»</strong>.
-                    </li>
-                    <li>
-                      <strong>Ð ÐµÐ·ÑƒÐ»ÑŒÑ‚Ð°Ñ‚:</strong> Ð’ÐºÐ»Ð°Ð´ÐºÐ° Â«Ð“Ð¾Ñ‚Ð¾Ð²Ñ‹Ðµ Ð½Ð¸ÑˆÐ¸Â» ÑÐºÑ€Ð¾ÐµÑ‚ÑÑ! ÐŸÐ¾ÐºÑƒÐ¿Ð°Ñ‚ÐµÐ»ÑŒ Ð²Ð¸Ð´Ð¸Ñ‚ Ñ‚Ð¾Ð»ÑŒÐºÐ¾ ÑÐ²Ð¾Ð¸ Ñ‚Ð¾Ð²Ð°Ñ€Ñ‹, Ð·Ð°ÐºÐ°Ð·Ñ‹, ÐºÐ¾Ð½Ñ‚Ð°ÐºÑ‚Ñ‹ Ð¸ Ñ†Ð²ÐµÑ‚Ð°.
-                    </li>
-                  </ul>
-                </div>
-              </div>
-
-              <div className="guide-step-card">
-                <div className="guide-step-number">2</div>
-                <div className="guide-step-content">
-                  <h3>Ð­ÐºÑÐ¿Ð¾Ñ€Ñ‚, Ð¸Ð¼Ð¿Ð¾Ñ€Ñ‚ Ð¸ ÑÐºÐ°Ñ‡Ð¸Ð²Ð°Ð½Ð¸Ðµ Ð¸ÑÑ…Ð¾Ð´Ð½Ð¸ÐºÐ¾Ð² (.ZIP)</h3>
-                  <div className="guide-tools-grid">
-                    <div className="guide-tool-card" style={{ border: '1px solid #2563eb', background: 'rgba(37,99,235,0.06)' }}>
-                      <div>
-                        <h4>ðŸ“¦ Ð¡ÐºÐ°Ñ‡Ð°Ñ‚ÑŒ Ð²ÐµÑÑŒ Ð¿Ñ€Ð¾ÐµÐºÑ‚ (ZIP-Ð°Ñ€Ñ…Ð¸Ð²)</h4>
-                        <p>ÐŸÐ¾Ð»Ð½Ñ‹Ð¹ Ð¸ÑÑ…Ð¾Ð´Ð½Ñ‹Ð¹ ÐºÐ¾Ð´ Next.js 16 + React 19 + Tailwind v4 + Ð²ÑÐµ ÐºÐ¾Ð¼Ð¿Ð¾Ð½ÐµÐ½Ñ‚Ñ‹, Ð°Ð´Ð¼Ð¸Ð½ÐºÐ° Ð¸ Ð±Ð°Ð·Ð° Ð´Ð°Ð½Ð½Ñ‹Ñ….</p>
-                      </div>
-                      <a
-                        href="/project-source.zip"
-                        download="universal-booking-site-source.zip"
-                        className="admin-primary"
-                        style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '8px' }}
-                      >
-                        <Download size={15} /> Ð¡ÐºÐ°Ñ‡Ð°Ñ‚ÑŒ ZIP
-                      </a>
-                    </div>
-
-                    <div className="guide-tool-card">
-                      <div>
-                        <h4>ðŸ“¥ Ð­ÐºÑÐ¿Ð¾Ñ€Ñ‚ Ð½Ð°ÑÑ‚Ñ€Ð¾ÐµÐº (JSON)</h4>
-                        <p>Ð¡Ð¾Ñ…Ñ€Ð°Ð½Ð¸Ñ‚ÑŒ Ñ‚Ð¾Ð»ÑŒÐºÐ¾ ÐºÐ¾Ð½Ñ„Ð¸Ð³ÑƒÑ€Ð°Ñ†Ð¸ÑŽ ÐºÐ¾Ð½ÐºÑ€ÐµÑ‚Ð½Ð¾Ð³Ð¾ ÐºÐ»Ð¸ÐµÐ½Ñ‚Ð° Ð² Ð¾Ð´Ð¸Ð½ Ñ„Ð°Ð¹Ð».</p>
-                      </div>
-                      <button type="button" className="admin-secondary" onClick={exportConfigJson}>
-                        <Download size={15} /> Ð¡ÐºÐ°Ñ‡Ð°Ñ‚ÑŒ JSON
-                      </button>
-                    </div>
-
-                    <div className="guide-tool-card">
-                      <div>
-                        <h4>ðŸ“¤ Ð˜Ð¼Ð¿Ð¾Ñ€Ñ‚ Ð½Ð°ÑÑ‚Ñ€Ð¾ÐµÐº (JSON)</h4>
-                        <p>ÐœÐ³Ð½Ð¾Ð²ÐµÐ½Ð½Ð¾ Ñ€Ð°Ð·Ð²ÐµÑ€Ð½ÑƒÑ‚ÑŒ Ñ€Ð°Ð½ÐµÐµ ÑÐ¾Ñ…Ñ€Ð°Ð½ÐµÐ½Ð½Ð¾Ð³Ð¾ ÐºÐ»Ð¸ÐµÐ½Ñ‚Ð° Ð¸Ð· Ñ„Ð°Ð¹Ð»Ð°.</p>
-                      </div>
-                      <button type="button" className="admin-secondary" onClick={() => setShowJsonModal(true)}>
-                        <Upload size={15} /> Ð’ÑÑ‚Ð°Ð²Ð¸Ñ‚ÑŒ JSON
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="guide-step-card">
-                <div className="guide-step-number">3</div>
-                <div className="guide-step-content">
-                  <h3>ÐšÐ¾Ð¼Ð°Ð½Ð´Ñ‹ Ð´Ð»Ñ Ð·Ð°Ð¿ÑƒÑÐºÐ° Ð½Ð° ÑÐµÑ€Ð²ÐµÑ€Ðµ Ð¸Ð»Ð¸ Ð»Ð¾ÐºÐ°Ð»ÑŒÐ½Ð¾</h3>
-                  <div style={{ background: '#0b0e14', border: '1px solid #262f42', borderRadius: '12px', padding: '16px', fontFamily: 'monospace', fontSize: '13px', lineHeight: 1.6, color: '#e2e8f0' }}>
-                    <div style={{ color: '#8e9bb5' }}># 1. Ð£ÑÑ‚Ð°Ð½Ð¾Ð²ÐºÐ° Ð¿Ð°ÐºÐµÑ‚Ð¾Ð²:</div>
-                    <div style={{ color: '#60a5fa' }}>npm install</div>
-                    <div style={{ color: '#8e9bb5', marginTop: '10px' }}># 2. Ð›Ð¾ÐºÐ°Ð»ÑŒÐ½Ñ‹Ð¹ Ð·Ð°Ð¿ÑƒÑÐº:</div>
-                    <div style={{ color: '#60a5fa' }}>npm run dev</div>
-                    <div style={{ color: '#8e9bb5', marginTop: '10px' }}># 3. Ð¡Ð±Ð¾Ñ€ÐºÐ° Ð´Ð»Ñ Ð±Ð¾ÐµÐ²Ð¾Ð³Ð¾ ÑÐµÑ€Ð²ÐµÑ€Ð° (Production):</div>
-                    <div style={{ color: '#34d399' }}>npm run build</div>
-                    <div style={{ color: '#34d399' }}>npm start</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </main>
-
-      {/* JSON Import Modal */}
-      {showJsonModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 100, display: 'grid', placeItems: 'center', padding: '16px' }}>
-          <div style={{ background: 'var(--adm-surface)', border: '1px solid var(--adm-border)', borderRadius: '16px', padding: '24px', maxWidth: '560px', width: '100%' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-              <h3 style={{ margin: 0, color: '#fff' }}>Ð˜Ð¼Ð¿Ð¾Ñ€Ñ‚ ÐºÐ¾Ð½Ñ„Ð¸Ð³ÑƒÑ€Ð°Ñ†Ð¸Ð¸ (JSON)</h3>
-              <button type="button" onClick={() => setShowJsonModal(false)} style={{ background: 'none', border: 0, color: '#8e9bb5', cursor: 'pointer' }}>
-                <X size={20} />
-              </button>
-            </div>
-            <textarea
-              style={{ width: '100%', height: '180px', background: '#1c2230', border: '1px solid #2d3748', borderRadius: '10px', color: '#fff', padding: '12px', fontFamily: 'monospace', fontSize: '12px', boxSizing: 'border-box', marginBottom: '16px' }}
-              value={jsonInput}
-              onChange={(e) => setJsonInput(e.target.value)}
-              placeholder='{"name": "ÐœÐ¾Ð¹ Ð¼Ð°Ð³Ð°Ð·Ð¸Ð½", "products": [...]}'
-            />
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-              <button type="button" className="admin-secondary" onClick={() => setShowJsonModal(false)}>
-                ÐžÑ‚Ð¼ÐµÐ½Ð°
-              </button>
-              <button type="button" className="admin-primary" onClick={importConfigJson}>
-                ÐŸÑ€Ð¸Ð¼ÐµÐ½Ð¸Ñ‚ÑŒ ÐºÐ¾Ð½Ñ„Ð¸Ð³ÑƒÑ€Ð°Ñ†Ð¸ÑŽ
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+YªçŠx-®éÜj×¢ëiºÚ+Š§j[h‘éÜ¢éíß®wá:-jZ.¶›­–)Þ³RwW6R6Æ–VçBs°¦–×÷'B²W6TVffV7BÂW6TÖVÖòÂW6U7FFRÒg&öÒw&V7Bs°¦–×÷'BÆ–æ²g&öÒvæW‡BöÆ–æ²s°¦–×÷'B°¢'&÷u&–v‡BÀ¢&öö´÷VâÀ¢6†Wg&öå&–v‡BÀ¢6÷’À¢7&VF—D6&BÀ¢F÷væÆöBÀ¢W‡FW&æÄÆ–æ²À¢W–RÀ¢W–TöfbÀ¢f–ÆU7&VG6†VWBÀ¢¶W•&÷VæBÀ¢Æö6²À¢6¶vRÀ¢ÆWGFRÀ¢ÇW2À¢&Vg&W6„7rÀ¢6fRÀ¢6V&6‚À¢6†–VÆD6†V6²À¢7&¶ÆW2À¢FrÀ¢G&6ƒ"À¢G'V6²À¢WÆöBÀ¢w&Væ6‚À¢‚À§Òg&öÒvÇV6–FR×&V7Bs°¦–×÷'B°¢ÖöæW’À¢DTdTÅEôDTÄ•dU%•õ$”4”ärÀ¢&W6WG2À¢G—R&öö¶–ærÀ¢G—R6öæf–rÀ¢G—R÷&FW"À¢G—R&W6WD¶W’À¢G—R&öGV7BÀ¢G—R6W'f–6RÀ¢G—RF†VÖT¶W’À§Òg&öÒtöÆ–"÷6†–ç6Æ÷Bs°¦–×÷'B²vWD7F—fT6öæf–rÒg&öÒtöÆ–"÷6—FRÖ6öæf–rs°¦–×÷'BrââööFÖ–âöFÖ–âæ772s°¦–×÷'B&öö¶–æt6ÆVæF"g&öÒrââööFÖ–âö&öö¶–ærÖ6ÆVæF"s° ¦gVæ7F–öâ'6TFDöç2‡fÃ¢Væ¶æ÷vâ“¢7G&–æuµÒ°¢–b„'&’æ—4'&’‡fÂ’’&WGW&âfÃ°¢–b‡G—VöbfÂÓÓÒw7G&–ærr’°¢G'’°¢6öç7B&W2Ò¥4ôâç'6R‡fÂ“°¢–b„'&’æ—4'&’‡&W2’’&WGW&â&W3°¢Ò6F6‚·Ð¢Ð¢&WGW&âµÓ°§Ð ¦gVæ7F–öâf÷&ÖDFVÆ—fW'•F–W'2‡F–W'3¢'&“Ç²g&öÓ¢çVÖ&W#²Ö÷VçC¢çVÖ&W"ÓâÂVæFVf–æVB’°¢&WGW&â‡F–W'2ÇÂµÒ’æÖ‚‡F–W"’ÓâG·F–W"æg&ö×Ó¢G·F–W"æÖ÷VçGÖ’æ¦ö–â‚uÆâr“°§Ð ¦gVæ7F–öâ'6TFVÆ—fW'•F–W'2‡fÇVS¢7G&–ær’°¢&WGW&âfÇVRç7Æ—B‚uÆâr’æÖ‚†Æ–æR’ÓâÆ–æRç7Æ—B‚s¢r’æÖ„çVÖ&W"’’æf–ÇFW"‚…¶g&öÒÂÖ÷VçEÒ’ÓâçVÖ&W"æ—4f–æ—FR†g&öÒ’bbg&öÒâbbçVÖ&W"æ—4f–æ—FR†Ö÷VçB’bbÖ÷VçBãÒ’æÖ‚…¶g&öÒÂÖ÷VçEÒ’Óâ‡²g&öÒÂÖ÷VçBÒ’“°§Ð §G—RF"Ð¢Âv÷fW'f–Wrp¢Âw&W6WG2p¢Âw&öGV7G2p¢Âw6W'f–6W2p¢Âv÷&FW'2p¢Âv&öö¶–æw2p¢ÂvFW6–vâp¢Âv6öçF7G2p¢Âw–ÖVçG2p¢Âw6V7W&—G’p¢ÂvwV–FRs° ¦6öç7B&W6WDÆ—7C¢°¢¶W“¢&W6WD¶W“°¢F—FÆS¢7G&–æs°¢7V'F—FÆS¢7G&–æs°¢–6öã¢7G&–æs°¢6÷VçC¢çVÖ&W#°¢F†VÖTæÖS¢7G&–æs°¢G—S¢7G&–æs°§ÕµÒÒ°¢²¶W“¢w6†÷rÂF—FÆS¢}	Ý-]Ý]"ÝÍ=}Òb
+í==ÂrÂ7V'F—FÆS¢}	íM]mMÂ­íÍ]-­Â-]ÝMí-½R-í-²Â­í}Ý‚íÝ½ÒÝíý½-rÂ–6öã¢	ù¸ÒrÂ6÷VçC¢bÂF†VÖTæÖS¢}	=M"b	}í½í-ârÂG—S¢}	Í=}ÒrÒÀ¢²¶W“¢v6%öFVÆW'6†—rÂF—FÆS¢}	--í½íÒb	M]-]½Ý2rÂ7V'F—FÆS¢}	--â"Ý½}‚Â-]"ÝM"Â-]BÝÒÂ--í]Íò‚MííÝ]ÝRrÂ–6öã¢	øøârÂ6÷VçC¢RÂF†VÖTæÖS¢}	ÝM=âb
+Ý’rÂG—S¢}	=BrÒÀ¢²¶W“¢v&&&W'6†÷rÂF—FÆS¢}	]íò‚Í=m­R-m­‚rÂ7V'F—FÆS¢}
+-m­‚ÂííMÂ­íí½]-­íR-Í‚Í=m­ò­íÍ]-­rÂ–6öã¢	ù(‚rÂ6÷VçC¢bÂF†VÖTæÖS¢}	=M"b	}í½í-ârÂG—S¢}	=BrÒÀ¢²¶W“¢vÖ76vRrÂF—FÆS¢}
+-=MòÍmb
+ýrÂ7V'F—FÆS¢}
+]½­Âí}Míí--]½ÍÝ½’ÍbÂýÝýí=ÍÍ²rÂ–6öã¢	ù(brÂ6÷VçC¢bÂF†VÖTæÖS¢}	}=Í=Bb	}]½Ý½’rÂG—S¢}
+=½==‚rÒÀ¢²¶W“¢v&VWG’rÂF—FÆS¢}
+½íÒ­í-²b	Íí-‚rÂ7V'F—FÆS¢}
+-m­‚Âí­-ÝRÂÍÝ­íÂí-‚‚=]íMí-ò­íÍ]-­rÂ–6öã¢	ù(RrÂ6÷VçC¢bÂF†VÖTæÖS¢}	Í]b
+í}í-½’rÂG—S¢}	=BrÒÀ¢²¶W“¢vWFòrÂF—FÆS¢}	--í]-b
+ÝíÍíÝ-brÂ7V'F—FÆS¢}
+ÝíÍíÝ-bÂ
+-	âÂýí½í-­ÂÍ½‚--í}ý}-‚rÂ–6öã¢	ù©rrÂ6÷VçC¢bÂF†VÖTæÖS¢}	ÝM=âb
+Ý’rÂG—S¢}	=BrÒÀ¢²¶W“¢v7W7FöÒrÂF—FÆS¢}
+}-Ý½’Í-]ò
+Ý­ý]"rÂ7V'F—FÆS¢}	ÝM-M=½ÍÝ½R­íÝ=½Í-m‚Â­í=}Ý2‚½}Ý½’ýÂrÂ–6öã¢	ù+ÂrÂ6÷VçC¢RÂF†VÖTæÖS¢}	ÝM=âb
+Ý’rÂG—S¢}
+=½==‚rÒÀ¢²¶W“¢w†÷FòrÂF—FÆS¢}
+Mí-í-=Mòb	ýíM­ÒrÂ7V'F—FÆS¢}	]ÝM}½í"Âm­½íÍÂMí-í]‚ýíB­½írrÂ–6öã¢	ù;‚rÂ6÷VçC¢RÂF†VÖTæÖS¢}	=M"b	}í½í-ârÂG—S¢}	=BrÒÀ¢²¶W“¢vf—FæW72rÂF—FÆS¢}
+M-Ý]b	ý]íÝ½ÍÝ½’-]Ý]rÂ7V'F—FÆS¢}
+-]Ýí-­‚Âí=Â-]-}Ý2‚ýí--ÝíRý-ÝRrÂ–6öã¢	úy‚rÂ6÷VçC¢RÂF†VÖTæÖS¢}	í­]Òb	í}rÂG—S¢}	=BrÒÀ¢²¶W“¢vÖVF–6ÂrÂF—FÆS¢}	­½Ý­b
+-íÍ-í½í=òrÂ7V'F—FÆS¢}	­íÝ=½Í-m‚-}]’Â==]ÝÂM=Ýí-­]rí½‚rÂ–6öã¢	úkrrÂ6÷VçC¢RÂF†VÖTæÖS¢}
+}-½’-]-½½’rÂG—S¢}
+=½==‚rÒÀ¢²¶W“¢wFGFöòrÂF—FÆS¢}
+--2Ý-=Mòb	ýÝ2rÂ7V'F—FÆS¢}	--í­RÝ­}²Â]Ý²--2ÂýÝ2rÂ–6öã¢	øê‚rÂ6÷VçC¢RÂF†VÖTæÖS¢}
+=Òb	íMârÂG—S¢}
+=½==‚rÒÀ¢²¶W“¢v6ÆVæ–ærrÂF—FÆS¢}	­½ÝÝ2b
+]Í}-­rÂ7V'F—FÆS¢}	=]Ý]½ÍÝò=í­­--ÂM-Ý²ÂÍí­í­íÒrÂ–6öã¢	ú{’rÂ6÷VçC¢RÂF†VÖTæÖS¢}	Ý]íÒb
+Mí½]-í-½’rÂG—S¢}
+=½==‚rÒÀ¥Ó° ¦6öç7B†÷Fõ&W6WG3¢²F—FÆS¢7G&–æs²æ–6†S¢7G&–æs²W&Ã¢7G&–ærÕµÒÒ°¢²F—FÆS¢}	Í=}ÒíM]mM²rÂæ–6†S¢}
+íýÝ2rÂW&Ã¢v‡GG3¢òö–ÖvW2çVç7Æ6‚æ6öÒ÷†÷FòÓCC“ƒc3“rÓcCcsF&CcCƒöWFóÖf÷&ÖBff—CÖ7&÷gsÓ#gÓƒrÒÀ¢²F—FÆS¢}	--í½íÒý]Í=ÂrÂæ–6†S¢}	--ârÂW&Ã¢v‡GG3¢òö–ÖvW2çVç7Æ6‚æ6öÒ÷†÷FòÓS33scsƒ3S2ÓvScc“#scv#söWFóÖf÷&ÖBff—CÖ7&÷gsÓ#gÓƒrÒÀ¢²F—FÆS¢}	]íòrÂæ–6†S¢}
+-m­‚rÂW&Ã¢v‡GG3¢òö–ÖvW2çVç7Æ6‚æ6öÒ÷†÷FòÓS3“S“CƒsRÓCS#c&#c6cöWFóÖf÷&ÖBff—CÖ7&÷gsÓ#gÓƒrÒÀ¢²F—FÆS¢}	Íbb
+ýrÂæ–6†S¢}
+ýrÂW&Ã¢v‡GG3¢òö–ÖvW2çVç7Æ6‚æ6öÒ÷†÷FòÓSCCcSRÓF#f6SfF#ƒsCöWFóÖf÷&ÖBff—CÖ7&÷gsÓ#gÓƒrÒÀ¢²F—FÆS¢}
+½íÒ­í-²rÂæ–6†S¢}	Íí-‚rÂW&Ã¢v‡GG3¢òö–ÖvW2çVç7Æ6‚æ6öÒ÷†÷FòÓSccc“ƒBÓ3†FF#F33SöWFóÖf÷&ÖBff—CÖ7&÷gsÓ#gÓƒrÒÀ¢²F—FÆS¢}	--í]-rÂæ–6†S¢}	--ârÂW&Ã¢v‡GG3¢òö–ÖvW2çVç7Æ6‚æ6öÒ÷†÷FòÓc3#CC““#"Öcƒ–3“–#CCöWFóÖf÷&ÖBff—CÖ7&÷gsÓ#gÓƒrÒÀ¢²F—FÆS¢}	íMb
+-=MòrÂæ–6†S¢}	}Ý]rÂW&Ã¢v‡GG3¢òö–ÖvW2çVç7Æ6‚æ6öÒ÷†÷FòÓC“s3cc#cSC‚Ó3sS#cs#“v3öWFóÖf÷&ÖBff—CÖ7&÷gsÓ#gÓƒrÒÀ¢²F—FÆS¢}
+Mí-í-=MòrÂæ–6†S¢}
+Mí-ârÂW&Ã¢v‡GG3¢òö–ÖvW2çVç7Æ6‚æ6öÒ÷†÷FòÓS#sCcCBÓCsƒcc“Fc†3öWFóÖf÷&ÖBff—CÖ7&÷gsÓ#gÓƒrÒÀ¢²F—FÆS¢}
+M-Ý]b	í=rÂæ–6†S¢}
+ýí"rÂW&Ã¢v‡GG3¢òö–ÖvW2çVç7Æ6‚æ6öÒ÷†÷FòÓS3CC3ƒ3#s#sbÓFSS336CƒöWFóÖf÷&ÖBff—CÖ7&÷gsÓ#gÓƒrÒÀ¢²F—FÆS¢}	­½Ý­b	Mí­-írÂæ–6†S¢}	Í]MmÝrÂW&Ã¢v‡GG3¢òö–ÖvW2çVç7Æ6‚æ6öÒ÷†÷FòÓc#“““c3cSBÓ#†S3sv33v#“öWFóÖf÷&ÖBff—CÖ7&÷gsÓ#gÓƒrÒÀ¥Ó° ¦6öç7BF†VÖU7vF6†W3¢²¶W“¢F†VÖT¶W“²F—FÆS¢7G&–æs²FW63¢7G&–æs²66VçD6öÆ÷#¢7G&–æs²&t6öÆ÷#¢7G&–ærÕµÒÒ°¢²¶W“¢vw&†—FRrÂF—FÆS¢}	=M"b	}í½í-ârÂFW63¢}	ý]Í=ÂÂ]íý²Â--2Â=-­‚rÂ66VçD6öÆ÷#¢r6SVC"rÂ&t6öÆ÷#¢r3#3RrÒÀ¢²¶W“¢væg’rÂF—FÆS¢}	ÝM=âb
+Ý’rÂFW63¢}	--í½íÝ²Â--í]-Â-]]Ýí½í=‚rÂ66VçD6öÆ÷#¢r3FffbrÂ&t6öÆ÷#¢r3S“rÒÀ¢²¶W“¢vVÖW&ÆBrÂF—FÆS¢}	}=Í=Bb	Íý-rÂFW63¢}
+ýÂÍbÂ}Míí-ÍRÂÝ­ârÂ66VçD6öÆ÷#¢r33vCc“"rÂ&t6öÆ÷#¢r3c2rÒÀ¢²¶W“¢vÖ&W"rÂF—FÆS¢}	Í]b
+í}í-½’rÂFW63¢}
+½íÝ²­í-²ÂÍ­ýbÂÍíMrÂ66VçD6öÆ÷#¢r6c“Sf"rÂ&t6öÆ÷#¢r3cBrÒÀ¢²¶W“¢w'V'’rÂF—FÆS¢}
+=Òb	íMârÂFW63¢}
+Ý½-Ý½R-=M‚Â}­½-½R­½=²rÂ66VçD6öÆ÷#¢r6SCC‚rÂ&t6öÆ÷#¢r33SrrÒÀ¢²¶W“¢wf–öÆWBrÂF—FÆS¢}	Ý]íÒb
+Mí½]-í-½’rÂFW63¢}	­½ÝÝ2Â--í}]--âÂÍí½íM]mÂrÂ66VçD6öÆ÷#¢r6ƒSVcrrÂ&t6öÆ÷#¢r3“c"rÒÀ¢²¶W“¢v7–ârÂF—FÆS¢}	í­]Òb	í}rÂFW63¢}
+M-Ý]Âí=Âýí"Â]Ý²rÂ66VçD6öÆ÷#¢r3f#fCBrÂ&t6öÆ÷#¢r3CC"rÒÀ¢²¶W“¢vÆ–v‡BrÂF—FÆS¢}
+-]-½òÍÝÍ½-}ÝòrÂFW63¢}	­½Ý­‚Â-íÍ-í½í=‚Â-=M‚rÂ66VçD6öÆ÷#¢r3SVfS‚rÂ&t6öÆ÷#¢r6cVcVcrÒÀ¥Ó° ¦6öç7BV–6µÆWGFT6öÆ÷'2Ò°¢²Æ&VÃ¢}	}í½í-í’rÂ†Wƒ¢r6SVC"rÒÀ¢²Æ&VÃ¢}
+Ý’rÂ†Wƒ¢r36#ƒ&cbrÒÀ¢²Æ&VÃ¢}	}=Í=BrÂ†Wƒ¢r3#“ƒrÒÀ¢²Æ&VÃ¢}
+=ÒrÂ†Wƒ¢r6SCC‚rÒÀ¢²Æ&VÃ¢}
+Mí½]-í-½’rÂ†Wƒ¢r3†#V6cbrÒÀ¢²Æ&VÃ¢}	í}í-½’rÂ†Wƒ¢r3f#fCBrÒÀ¢²Æ&VÃ¢}	íÝm]-½’rÂ†Wƒ¢r6c“s3brÒÀ¢²Æ&VÃ¢}	]½½’rÂ†Wƒ¢r6fffffbrÒÀ¥Ó° ¦W‡÷'BG—RFÖ–äF6†&ö&E&÷2Ò°¢öäW†—Có¢‚’Óâfö–C°¢–æ—F–ÅF#ó¢F#°¢öä6öæf–t6†ævSó¢†3¢6öæf–r’Óâfö–C°§Ó° ¦W‡÷'BFVfVÇBgVæ7F–öâFÖ–äF6†&ö&B‡²öäW†—BÂ–æ—F–ÅF"Òv÷fW'f–WrrÂöä6öæf–t6†ævRÓ¢FÖ–äF6†&ö&E&÷2’°¢6öç7B¶6öæf–rÂ6WD6öæf–uÒÒW6U7FFSÄ6öæf–sâ†vWD7F—fT6öæf–r‚’“°¢6öç7B¶&öö¶–æw2Â6WD&öö¶–æw5ÒÒW6U7FFSÄ&öö¶–æuµÓâ…µÒ“°¢6öç7B¶÷&FW'2Â6WD÷&FW'5ÒÒW6U7FFSÄ÷&FW%µÓâ…µÒ“°¢6öç7B·F"Â6WEF%ÒÒW6U7FFSÅF#â†–æ—F–ÅF"“°¢6öç7B·6f–ærÂ6WE6f–æuÒÒW6U7FFR†fÇ6R“°¢6öç7B¶æ÷F–6RÂ6WDæ÷F–6UÒÒW6U7FFR‚rr“°¢6öç7B¶†46†ævW2Â6WD†46†ævW5ÒÒW6U7FFR†fÇ6R“° ¢òòFÖ–â66W72—2fW&–f–VB'’F†R6W'fW"6W76–öâVæGö–çBà¢6öç7B¶—4WF†VçF–6FVBÂ6WD—4WF†VçF–6FVEÒÒW6U7FFR†fÇ6R“°¢6öç7B·77v÷&D–çWBÂ6WE77v÷&D–çWEÒÒW6U7FFR‚rr“°¢6öç7B·77v÷&DW'&÷"Â6WE77v÷&DW'&÷%ÒÒW6U7FFR‚rr“°¢6öç7B¶Æö6µ&VÖ–æ–ærÂ6WDÆö6µ&VÖ–æ–æuÒÒW6U7FFRƒ“°¢6öç7B·6†÷u77v÷&BÂ6WE6†÷u77v÷&EÒÒW6U7FFR†fÇ6R“° ¢òò&öÆS¢v6Æ–VçBr†'W–W"öbF†RFV×ÆFR’g2vFWfVÆ÷W"r†7&VF÷"òvVæ7’¢6öç7B·&öÆRÂ6WE&öÆUÒÒW6U7FFSÂv6Æ–VçBrÂvFWfVÆ÷W"sâ‚v6Æ–VçBr“° ¢7–æ2gVæ7F–öâ†æFÆTÆöv–â†S¢&V7Bäf÷&ÔWfVçB’°¢Rç&WfVçDFVfVÇB‚“°¢–b†Æö6µ&VÖ–æ–ærâ’&WGW&ã°¢6WE77v÷&DW'&÷"‚}	ýí-]ý]Âýí½Î(
+br“°¢G'’°¢6öç7B&W7öç6RÒv—BfWF6‚‚rö’öFÖ–â÷6W76–öârÂ²ÖWF†öC¢uõ5BrÂ†VFW'3¢²t6öçFVçBÕG—Rs¢vÆ–6F–öâö§6öârÒÂ&öG“¢¥4ôâç7G&–æv–g’‡²77v÷&C¢77v÷&D–çWBÒ’Ò“°¢6öç7B&W7VÇBÒv—B&W7öç6Ræ§6öâ‚’2²W'&÷#ó¢7G&–æs²GFV×G4ÆVgCó¢çVÖ&W#²&Æö6¶VDf÷%6V6öæG3ó¢çVÖ&W"Ó°¢–b‚&W7öç6Ræö²’°¢6öç7Bv—BÒ&W7VÇBæ&Æö6¶VDf÷%6V6öæG3°¢–b‡v—B’6WDÆö6µ&VÖ–æ–ær‡v—B“°¢6WE77v÷&DW'&÷"‡v—Bò}	-]íB-]Í]ÝÝâ}½í­í-Òr¢G·&W7VÇBæW'&÷"ÇÂ}	Ý]-]Ý½’ýí½ÂwÒG·&W7VÇBæGFV×G4ÆVgBòâ	í-½íÂýíý½-í£¢G·&W7VÇBæGFV×G4ÆVgGÖ¢rwÖ“°¢&WGW&ã°¢Ð¢6WD—4WF†VçF–6FVB‡G'VR“²6WE77v÷&DW'&÷"‚rr“²6WE77v÷&D–çWB‚rr“²6WDÆö6µ&VÖ–æ–ærƒ“°¢Ò6F6‚²6WE77v÷&DW'&÷"‚}	ÝR=M½íÂ-ý}-Íò]-]íÂâ	ýí--í-Rýíý½-­2âr“²Ð¢Ð ¢7–æ2gVæ7F–öâ†æFÆTÆöv÷WB‚’°¢v—BfWF6‚‚rö’öFÖ–â÷6W76–öârÂ²ÖWF†öC¢tDTÄUDRrÒ’æ6F6‚‚‚’ÓâVæFVf–æVB“°¢6WD—4WF†VçF–6FVB†fÇ6R“°¢Ð ¢W6TVffV7B‚‚’Óâ°¢fWF6‚‚rö’öFÖ–â÷6W76–öârÂ²66†S¢væò×7F÷&RrÒ¢çF†Vâ‚‡&W7öç6R’Óâ&W7öç6Ræö²ò&W7öç6Ræ§6öâ‚’¢çVÆÂ¢çF†Vâ‚‡&W7VÇC¢²WF†VçF–6FVCó¢&ööÆVâÒÂçVÆÂ’Óâ6WD—4WF†VçF–6FVB„&ööÆVâ‡&W7VÇCòæWF†VçF–6FVB’’¢æ6F6‚‚‚’Óâ6WD—4WF†VçF–6FVB†fÇ6R’“°¢ÒÂµÒ“° ¢W6TVffV7B‚‚’Óâ°¢–b†Æö6µ&VÖ–æ–ærÃÒ’&WGW&ã°¢6öç7BF–ÖW"Òv–æF÷rç6WD–çFW'fÂ‚‚’Óâ6WDÆö6µ&VÖ–æ–ær‚‡&VÖ–æ–ær’ÓâÖF‚æÖ‚ƒÂ&VÖ–æ–ærÒ’’Â“°¢&WGW&â‚’Óâv–æF÷ræ6ÆV$–çFW'fÂ‡F–ÖW"“°¢ÒÂ¶Æö6µ&VÖ–æ–ærâÒ“°  ¢òò6V&6‚bf–ÇFW'0¢6öç7B·&öGV7E6V&6‚Â6WE&öGV7E6V&6…ÒÒW6U7FFR‚rr“°¢6öç7B·&öGV7D6FVv÷'”f–ÇFW"Â6WE&öGV7D6FVv÷'”f–ÇFW%ÒÒW6U7FFR‚vÆÂr“°¢6öç7B·6W'f–6U6V&6‚Â6WE6W'f–6U6V&6…ÒÒW6U7FFR‚rr“°¢6öç7B·6W'f–6T6FVv÷'”f–ÇFW"Â6WE6W'f–6T6FVv÷'”f–ÇFW%ÒÒW6U7FFR‚vÆÂr“° ¢òò¥4ôâ–×÷'@¢6öç7B¶§6öä–çWBÂ6WD§6öä–çWEÒÒW6U7FFR‚rr“°¢6öç7B·6†÷t§6öäÖöFÂÂ6WE6†÷t§6öäÖöFÅÒÒW6U7FFR†fÇ6R“° ¢W6TVffV7B‚‚’Óâ°¢–b‚—4WF†VçF–6FVB’&WGW&ã°¢ÆWB–væ÷&RÒfÇ6S°¢7–æ2gVæ7F–öâ–æ—B‚’°¢G'’°¢6öç7B6fu&W2Òv—BfWF6‚‚rö’ö6öæf–söG&gCÓr“°¢–b†6fu&W2æö²’°¢6öç7BBÒ†v—B6fu&W2æ§6öâ‚’’2²6öæf–só¢6öæf–rÓ°¢–b†Còæ6öæf–rbb–væ÷&R’°¢6WD6öæf–r†Bæ6öæf–r“°¢–b†Bæ6öæf–ræFÖ–äÖöFR’6WE&öÆR†Bæ6öæf–ræFÖ–äÖöFR“°¢Ð¢Ð¢Ò6F6‚†R’°¢6öç6öÆRæW'&÷"‚tW'&÷"fWF6†–ær–æ—F–Â6öæf–s¢rÂR“°¢Ð¢Ð¢–æ—B‚“°¢ÆöDFF‚“°¢&WGW&â‚’Óâ°¢–væ÷&RÒG'VS°¢Ó°¢ÒÂ¶—4WF†VçF–6FVEÒ“° ¢7–æ2gVæ7F–öâÆöDFF‚’°¢G'’°¢6öç7B¶%&W2Âõ&W5ÒÒv—B&öÖ—6RæÆÂ…°¢fWF6‚‚rö’ö&öö¶–æw2r’À¢fWF6‚‚rö’ö÷&FW'2r’À¢Ò“° ¢–b†%&W2æö²’°¢6öç7B"Ò†v—B%&W2æ§6öâ‚’’2²&öö¶–æw3ó¢„&öö¶–ærb²FDöç3ó¢Væ¶æ÷vâÒ•µÒÓ°¢–b†#òæ&öö¶–æw2’°¢6WD&öö¶–æw2€¢"æ&öö¶–æw2æÖ‚‡b’Óâ‡°¢ââçbÀ¢FDöç3¢'6TFDöç2‡bæFDöç2’À¢Ò’¢“°¢Ð¢Ð ¢–b†õ&W2æö²’°¢6öç7BòÒ†v—Bõ&W2æ§6öâ‚’’2²÷&FW'3ó¢÷&FW%µÒÓ°¢–b†óòæ÷&FW'2’°¢6WD÷&FW'2†òæ÷&FW'2“°¢Ð¢Ð¢Ò6F6‚†R’°¢6öç6öÆRæW'&÷"‚tW'&÷"ÆöF–ærFÖ–âFFrÂR“°¢Ð¢Ð ¢gVæ7F–öâWFFTf–VÆCÄ²W‡FVæG2¶W–öb6öæf–sâ†¶W“¢²ÂfÇVS¢6öæf–u´µÒ’°¢6WD6öæf–r‚†2’Óâ°¢6öç7BæW‡BÒ²ââæ2Â¶¶W•Ó¢fÇVRÓ°¢öä6öæf–t6†ævSòâ†æW‡B“°¢&WGW&âæW‡C°¢Ò“°¢6WD†46†ævW2‡G'VR“°¢6WDæ÷F–6R‚rr“°¢Ð ¢òòÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÒ$ôET5E25%TBÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÐ¢gVæ7F–öâFE&öGV7B‚’°¢6öç7BæWu&öC¢&öGV7BÒ°¢–C¢w&öEòr²FFRææ÷r‚’çFõ7G&–ærƒ3b’À¢æÖS¢}	Ýí-½’-í-r²‚†6öæf–rç&öGV7G3òæÆVæwF‚ÇÂ’²’À¢FW67&—F–öã¢}	ýíMíÝíRíýÝR-í-Â]­-]-­‚‚ý]Í=]--rÀ¢&–6S¢#SÀ¢öÆE&–6S¢3#À¢–ÖvUW&Ã¢v‡GG3¢òö–ÖvW2çVç7Æ6‚æ6öÒ÷†÷FòÓS#3#sS33ScƒBÓ3sƒ“†#f&c3öWFóÖf÷&ÖBff—CÖ7&÷gsÓƒgÓƒrÀ¢6FVv÷'“¢}	íÝí-ÝíRrÀ¢&FvS¢}	Ýí-Ý­rÀ¢–å7Fö6³¢G'VRÀ¢Væ&ÆVC¢G'VRÀ¢Ó°¢6öç7B7W'&VçBÒ6öæf–rç&öGV7G2ÇÂµÓ°¢WFFTf–VÆB‚w&öGV7G2rÂ²ââæ7W'&VçBÂæWu&öEÒ“°¢6WDæ÷F–6R‚}
+-í-=ý]ÝâMí-½]Ò"­-½í2r“°¢Ð ¢gVæ7F–öâWFFU&öGV7B†–C¢7G&–ærÂF6ƒ¢'F–ÃÅ&öGV7Câ’°¢6öç7B7W'&VçBÒ6öæf–rç&öGV7G2ÇÂµÓ°¢WFFTf–VÆB€¢w&öGV7G2rÀ¢7W'&VçBæÖ‚‡’Óâ‡æ–BÓÓÒ–Bò²ââçÂââçF6‚Ò¢’¢“°¢Ð ¢gVæ7F–öâGWÆ–6FU&öGV7B‡&öGV7C¢&öGV7B’°¢6öç7B6ÆöæS¢&öGV7BÒ°¢ââç&öGV7BÀ¢–C¢w&öEòr²FFRææ÷r‚’çFõ7G&–ærƒ3b’²uòr²ÖF‚ç&æFöÒ‚’çFõ7G&–ærƒ3b’ç6Æ–6Rƒ"ÂR’À¢æÖS¢&öGV7BææÖR²r	­íýò’rÀ¢Ó°¢6öç7B7W'&VçBÒ6öæf–rç&öGV7G2ÇÂµÓ°¢6öç7B–æFW‚Ò7W'&VçBæf–æD–æFW‚‚‡’Óâæ–BÓÓÒ&öGV7Bæ–B“°¢6öç7BæW‡DÆ—7BÒ²ââæ7W'&VçEÓ°¢æW‡DÆ—7Bç7Æ–6R†–æFW‚²ÂÂ6ÆöæR“°¢WFFTf–VÆB‚w&öGV7G2rÂæW‡DÆ—7B“°¢6WDæ÷F–6R†
+-í-­íýí-Ó¢*²G¶6ÆöæRææÖWÜ+¶“°¢Ð ¢gVæ7F–öâ&VÖ÷fU&öGV7B†–C¢7G&–ær’°¢6öç7B7W'&VçBÒ6öæf–rç&öGV7G2ÇÂµÓ°¢WFFTf–VÆB€¢w&öGV7G2rÀ¢7W'&VçBæf–ÇFW"‚‡’Óâæ–BÓÒ–B¢“°¢6WDæ÷F–6R‚}
+-í-=M½]Òr­-½í=r“°¢Ð ¢gVæ7F–öâFD&F6…&öGV7G2‚’°¢6öç7B&F6ƒ¢&öGV7EµÒÒ°¢²–C¢v'óòr²FFRææ÷r‚’ÂæÖS¢}	ý]Í=Â­íÍý½]­"7G–ÆRVF—F–öârÂFW67&—F–öã¢}	½Í-í-ÝÝò]ò"MÍ]ÝÝí’ýíMí}Ýí’­íí­RrÂ&–6S¢c“ÂöÆE&–6S¢ƒSÂ–ÖvUW&Ã¢v‡GG3¢òö–ÖvW2çVç7Æ6‚æ6öÒ÷†÷FòÓSCcƒcƒƒsÓsCc&SVS#öWFóÖf÷&ÖBff—CÖ7&÷gsÓƒgÓƒrÂ6FVv÷'“¢}	­íÍý½]­-²rÂ&FvS¢}
+]"rÂ–å7Fö6³¢G'VRÂVæ&ÆVC¢G'VRÒÀ¢²–C¢v'ó%òr²FFRææ÷r‚’ÂæÖS¢}	}í-½’ÝíÝ­mM½’M]ÝÂrÂFW67&—F–öã¢}	ý­-}ÝíR‚ÝM]mÝíR]]ÝR=Ý-]’=íBrÂ&–6S¢#“ÂöÆE&–6S¢3CÂ–ÖvUW&Ã¢v‡GG3¢òö–ÖvW2çVç7Æ6‚æ6öÒ÷†÷FòÓSSsCC#“#‚ÓVSSc3fC3SöWFóÖf÷&ÖBff—CÖ7&÷gsÓƒgÓƒrÂ6FVv÷'“¢}
+]-²rÂ&FvS¢}
+­M­rÂ–å7Fö6³¢G'VRÂVæ&ÆVC¢G'VRÒÀ¢²–C¢v'ó5òr²FFRææ÷r‚’ÂæÖS¢}	ýíMí}Ý½’]-M­"ÝR(+ÒrÂFW67&—F–öã¢}	M]½ÍÝ½’ýíMí¢M=}ÍýÂ‚­í½½]=ÂÝ½í½R-í-²rÂ&–6S¢SÂ–ÖvUW&Ã¢v‡GG3¢òö–ÖvW2çVç7Æ6‚æ6öÒ÷†÷FòÓS3S“#CSƒ‚ÓS#“&SV3ƒöWFóÖf÷&ÖBff—CÖ7&÷gsÓƒgÓƒrÂ6FVv÷'“¢}
+]-M­-²rÂ&FvS¢}	"Ý½}‚rÂ–å7Fö6³¢G'VRÂVæ&ÆVC¢G'VRÒÀ¢²–C¢v'óEòr²FFRææ÷r‚’ÂæÖS¢}	­]=]‚6öÖf÷'BÆ–æRrÂFW67&—F–öã¢}
+Ý=íÝíÍ}Ý½’M}Ò‚ýý-Ý½R-­-½ÍÝ½RÍ-]½²rÂ&–6S¢sSÂ–ÖvUW&Ã¢v‡GG3¢òö–ÖvW2çVç7Æ6‚æ6öÒ÷†÷FòÓSƒ33“Cƒ3ƒ33bÖ6C“sss3fc“öWFóÖf÷&ÖBff—CÖ7&÷gsÓƒgÓƒrÂ6FVv÷'“¢}	­]=²rÂ–å7Fö6³¢G'VRÂVæ&ÆVC¢G'VRÒÀ¢²–C¢v'óUòr²FFRææ÷r‚’ÂæÖS¢}
+Ý­­½í}-Ýòýí}mò&Æ6²VF—F–öârÂFW67&—F–öã¢}
+-í=’ÍÝÍ½}Â‚Í­Í½ÍÝòM=Ý­míÝ½ÍÝí-ÂrÂ&–6S¢“#ÂöÆE&–6S¢Â–ÖvUW&Ã¢v‡GG3¢òö–ÖvW2çVç7Æ6‚æ6öÒ÷†÷FòÓSs#c3S“c#3rÓF#6c#ƒS6cöWFóÖf÷&ÖBff—CÖ7&÷gsÓƒgÓƒrÂ6FVv÷'“¢}	­íÍý½]­-²rÂ&FvS¢rÓ#RrÂ–å7Fö6³¢G'VRÂVæ&ÆVC¢G'VRÒÀ¢Ó°¢6öç7B7W'&VçBÒ6öæf–rç&öGV7G2ÇÂµÓ°¢WFFTf–VÆB‚w&öGV7G2rÂ²ââæ7W'&VçBÂââæ&F6…Ò“°¢6WDæ÷F–6R†	ý­]"rR-í-í"Mí-½]Ò	-]=â"­-½í=S¢G¶7W'&VçBæÆVæwF‚²WÖ“°¢Ð ¢òòÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÒ4U%d”4U25%TBÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÐ¢gVæ7F–öâFE6W'f–6R‚’°¢6öç7BæWu6W'f–6S¢6W'f–6RÒ°¢–C¢w7'eòr²FFRææ÷r‚’çFõ7G&–ærƒ3b’À¢æÖS¢}	Ýí-ò=½==r²†6öæf–rç6W'f–6W2æÆVæwF‚²’À¢FW67&—F–öã¢}	­-­íRíýÝRýím]M=²M½ò­½]Ý-í"rÀ¢&–6S¢#¸ç~-¢G§²ÚîÆ­yÖ766†÷–C¢RçF&vWBçfÇVRÀ¢Ò¢Ð¢7G–ÆS×·²v–GFƒ¢sRrÂ†V–v‡C¢s3‡‚rÂ&6¶w&÷VæC¢r3Cƒ#"rÂ&÷&FW#¢s‚6öÆ–B3#c&cC"rÂ&÷&FW%&F—W3¢s‡‚rÂ6öÆ÷#¢r6ffbrÂFF–æs¢s‚rÂföçE6—¦S¢s7‚rÂ&÷…6—¦–æs¢v&÷&FW"Ö&÷‚r×Ð¢óà¢ÂöF—cà¢ÆF—cà¢ÆÆ&VÂ7G–ÆS×·²föçE6—¦S¢s‚rÂ6öÆ÷#¢r3†S–&#RrÂF—7Æ“¢v&Æö6²rÂÖ&v–ä&÷GFöÓ¢sG‚r×Óà¢
+]­]-Ý½’­½ír“ ¢ÂöÆ&VÃà¢Æ–çW@¢G—SÒ'77v÷&B ¢Æ6V†öÆFW#Ò&Æ—fUòâââ½‚FW7Eòâââ ¢fÇVS×¶6öæf–rç–ÖVçDÖWF†öG3òç–öö¶766V7&WD¶W’ÇÂrwÐ¢öä6†ævS×²†R’Óà¢WFFTf–VÆB‚w–ÖVçDÖWF†öG2rÂ°¢âââ†6öæf–rç–ÖVçDÖWF†öG2ÇÂ²öæÆ–æT6&C¢G'VRÂ6'öæÆ–æS¢G'VRÂ66„öäFVÆ—fW'“¢G'VRÂ6&EG&ç6fW#¢G'VRÒ’À¢–öö¶766V7&WD¶W“¢RçF&vWBçfÇVRÀ¢Ò¢Ð¢7G–ÆS×·²v–GFƒ¢sRrÂ†V–v‡C¢s3‡‚rÂ&6¶w&÷VæC¢r3Cƒ#"rÂ&÷&FW#¢s‚6öÆ–B3#c&cC"rÂ&÷&FW%&F—W3¢s‡‚rÂ6öÆ÷#¢r6ffbrÂFF–æs¢s‚rÂföçE6—¦S¢s7‚rÂ&÷…6—¦–æs¢v&÷&FW"Ö&÷‚r×Ð¢óà¢ÂöF—cà¢ÂöF—cà¢—Ð¢ÂöF—cà ¢²ò¢"â4%öæÆ–æR¢÷Ð¢ÆF—b7G–ÆS×·²&6¶w&÷VæC¢r3#SBrÂFF–æs¢s‡‚rÂ&÷&FW%&F—W3¢sG‚rÂ&÷&FW#¢s‚6öÆ–B3#c&cC"r×Óà¢ÆÆ&VÂ7G–ÆS×·²F—7Æ“¢vfÆW‚rÂÆ–vä—FV×3¢v6VçFW"rÂ§W7F–g”6öçFVçC¢w76RÖ&WGvVVârÂ7W'6÷#¢wö–çFW"r×Óà¢ÆF—b7G–ÆS×·²F—7Æ“¢vfÆW‚rÂÆ–vä—FV×3¢v6VçFW"rÂv¢s'‚r×Óà¢ÅFr6—¦S×³#GÒ6öÆ÷#Ò"6cS–S""óà¢ÆF—cà¢Ç7G&öær7G–ÆS×·²föçE6—¦S¢sW‚r×Óí
+-]Í	½-½R	ý½-]m]’
+		òýâ"Ý­íM2“Â÷7G&öæsà¢ÆF—b7G–ÆS×·²föçE6—¦S¢s'‚rÂ6öÆ÷#¢r3†S–&#Rr×Óí	­½]Ý"­Ý=]""Ý­íB‚íý½}-]"]r--íMMÝÝ½R­-³ÂöF—cà¢ÂöF—cà¢ÂöF—cà¢Æ–çW@¢G—SÒ&6†V6¶&÷‚ ¢6†V6¶VC×¶6öæf–rç–ÖVçDÖWF†öG3òç6'öæÆ–æRÓÒfÇ6WÐ¢öä6†ævS×²†R’Óà¢WFFTf–VÆB‚w–ÖVçDÖWF†öG2rÂ°¢âââ†6öæf–rç–ÖVçDÖWF†öG2ÇÂ²öæÆ–æT6&C¢G'VRÂ6'öæÆ–æS¢G'VRÂ66„öäFVÆ—fW'“¢G'VRÂ6&EG&ç6fW#¢G'VRÒ’À¢6'öæÆ–æS¢RçF&vWBæ6†V6¶VBÀ¢Ò¢Ð¢7G–ÆS×·²v–GFƒ¢s#‚rÂ†V–v‡C¢s#‚r×Ð¢óà¢ÂöÆ&VÃà ¢¶6öæf–rç–ÖVçDÖWF†öG3òç6'öæÆ–æRÓÒfÇ6Rbb€¢ÆF—b7G–ÆS×·²Ö&v–åF÷¢sG‚rÂFF–æuF÷¢sG‚rÂ&÷&FW%F÷¢s‚6öÆ–B33##3rÂF—7Æ“¢vw&–BrÂw&–EFV×ÆFT6öÇVÖç3¢sg"g"rÂv¢s'‚r×Óà¢ÆF—cà¢ÆÆ&VÂ7G–ÆS×·²föçE6—¦S¢s‚rÂ6öÆ÷#¢r3†S–&#RrÂF—7Æ“¢v&Æö6²rÂÖ&v–ä&÷GFöÓ¢sG‚r×Óà¢	ÝíÍ]-]½]MíÝM½ò
+		ó ¢ÂöÆ&VÃà¢Æ–çW@¢G—SÒ'FW‡B ¢Æ6V†öÆFW#Ò"³rƒ““’’ÓÓ ¢fÇVS×¶6öæf–rç–ÖVçDÖWF†öG3òç6'†öæRÇÂ6öæf–rç†öæRÇÂrwÐ¢öä6†ævS×²†R’Óà¢WFFTf–VÆB‚w–ÖVçDÖWF†öG2rÂ°¢âââ†6öæf–rç–ÖVçDÖWF†öG2ÇÂ²öæÆ–æT6&C¢G'VRÂ6'öæÆ–æS¢G'VRÂ66„öäFVÆ—fW'“¢G'VRÂ6&EG&ç6fW#¢G'VRÒ’À¢6'†öæS¢RçF&vWBçfÇVRÀ¢Ò¢Ð¢7G–ÆS×·²v–GFƒ¢sRrÂ†V–v‡C¢s3‡‚rÂ&6¶w&÷VæC¢r3Cƒ#"rÂ&÷&FW#¢s‚6öÆ–B3#c&cC"rÂ&÷&FW%&F—W3¢s‡‚rÂ6öÆ÷#¢r6ffbrÂFF–æs¢s‚rÂföçE6—¦S¢s7‚rÂ&÷…6—¦–æs¢v&÷&FW"Ö&÷‚r×Ð¢óà¢ÂöF—cà¢ÆF—cà¢ÆÆ&VÂ7G–ÆS×·²föçE6—¦S¢s‚rÂ6öÆ÷#¢r3†S–&#RrÂF—7Æ“¢v&Æö6²rÂÖ&v–ä&÷GFöÓ¢sG‚r×Óà¢	Ý¢ýí½=}-]½ó ¢ÂöÆ&VÃà¢Æ–çW@¢G—SÒ'FW‡B ¢Æ6V†öÆFW#Ò-
+"Ý	Ý¢ò
+]ò	½ÍM ¢fÇVS×¶6öæf–rç–ÖVçDÖWF†öG3òç6'&æ´æÖRÇÂ}
+"Ý	Ý¢wÐ¢öä6†ævS×²†R’Óà¢WFFTf–VÆB‚w–ÖVçDÖWF†öG2rÂ°¢âââ†6öæf–rç–ÖVçDÖWF†öG2ÇÂ²öæÆ–æT6&C¢G'VRÂ6'öæÆ–æS¢G'VRÂ66„öäFVÆ—fW'“¢G'VRÂ6&EG&ç6fW#¢G'VRÒ’À¢6'&æ´æÖS¢RçF&vWBçfÇVRÀ¢Ò¢Ð¢7G–ÆS×·²v–GFƒ¢sRrÂ†V–v‡C¢s3‡‚rÂ&6¶w&÷VæC¢r3Cƒ#"rÂ&÷&FW#¢s‚6öÆ–B3#c&cC"rÂ&÷&FW%&F—W3¢s‡‚rÂ6öÆ÷#¢r6ffbrÂFF–æs¢s‚rÂföçE6—¦S¢s7‚rÂ&÷…6—¦–æs¢v&÷&FW"Ö&÷‚r×Ð¢óà¢ÂöF—cà¢ÂöF—cà¢—Ð¢ÂöF—cà ¢²ò¢2â66‚öâFVÆ—fW'’¢÷Ð¢ÆF—b7G–ÆS×·²&6¶w&÷VæC¢r3#SBrÂFF–æs¢s‡‚rÂ&÷&FW%&F—W3¢sG‚rÂ&÷&FW#¢s‚6öÆ–B3#c&cC"r×Óà¢ÆÆ&VÂ7G–ÆS×·²F—7Æ“¢vfÆW‚rÂÆ–vä—FV×3¢v6VçFW"rÂ§W7F–g”6öçFVçC¢w76RÖ&WGvVVârÂ7W'6÷#¢wö–çFW"r×Óà¢ÆF—b7G–ÆS×·²F—7Æ“¢vfÆW‚rÂÆ–vä—FV×3¢v6VçFW"rÂv¢s'‚r×Óà¢ÅG'V6²6—¦S×³#GÒ6öÆ÷#Ò"3#“ƒ"óà¢ÆF—cà¢Ç7G&öær7G–ÆS×·²föçE6—¦S¢sW‚r×Óí	íý½-ý‚ýí½=}]Ý‚	Ý½}Ý½Í‚½‚­=Í]2“Â÷7G&öæsà¢ÆF—b7G–ÆS×·²föçE6—¦S¢s'‚rÂ6öÆ÷#¢r3†S–&#Rr×Óí	ýí­=ý-]½Âíý½}-]"}­rý‚-½M}R½‚-}-SÂöF—cà¢ÂöF—cà¢ÂöF—cà¢Æ–çW@¢G—SÒ&6†V6¶&÷‚ ¢6†V6¶VC×¶6öæf–rç–ÖVçDÖWF†öG3òæ66„öäFVÆ—fW'’ÓÒfÇ6WÐ¢öä6†ævS×²†R’Óà¢WFFTf–VÆB‚w–ÖVçDÖWF†öG2rÂ°¢âââ†6öæf–rç–ÖVçDÖWF†öG2ÇÂ²öæÆ–æT6&C¢G'VRÂ6'öæÆ–æS¢G'VRÂ66„öäFVÆ—fW'“¢G'VRÂ6&EG&ç6fW#¢G'VRÒ’À¢66„öäFVÆ—fW'“¢RçF&vWBæ6†V6¶VBÀ¢Ò¢Ð¢7G–ÆS×·²v–GFƒ¢s#‚rÂ†V–v‡C¢s#‚r×Ð¢óà¢ÂöÆ&VÃà¢ÂöF—cà ¢²ò¢Bâ6æF&÷‚òFW7BÖöFRFövvÆR¢÷Ð¢ÆF—b7G–ÆS×·²&6¶w&÷VæC¢w&v&ƒS’Â3Â#CbÂã‚’rÂFF–æs¢sg‚rÂ&÷&FW%&F—W3¢sG‚rÂ&÷&FW#¢s‚6öÆ–B&v&ƒS’Â3Â#CbÂã2’r×Óà¢ÆÆ&VÂ7G–ÆS×·²F—7Æ“¢vfÆW‚rÂÆ–vä—FV×3¢v6VçFW"rÂ§W7F–g”6öçFVçC¢w76RÖ&WGvVVârÂ7W'6÷#¢wö–çFW"r×Óà¢ÆF—cà¢Ç7G&öær7G–ÆS×·²6öÆ÷#¢r3“63VfBr×Óï	úz¢
+-]-í-½’]mÂíý½-²	M]ÍâÝ½ír“Â÷7G&öæsà¢ÆF—b7G–ÆS×·²föçE6—¦S¢s'‚rÂ6öÆ÷#¢r66&CVSr×Óà¢	ýí}-í½ý]"­½]Ý-Â‚-Âýí-]ý-ÂíMíÍ½]ÝR‚íý½-2]rýÝò]½ÍÝ½R=½]’à¢ÂöF—cà¢ÂöF—cà¢Æ–çW@¢G—SÒ&6†V6¶&÷‚ ¢6†V6¶VC×¶6öæf–rç–ÖVçDÖWF†öG3òçFW7DÖöFRÓÒfÇ6WÐ¢öä6†ævS×²†R’Óà¢WFFTf–VÆB‚w–ÖVçDÖWF†öG2rÂ°¢âââ†6öæf–rç–ÖVçDÖWF†öG2ÇÂ²öæÆ–æT6&C¢G'VRÂ6'öæÆ–æS¢G'VRÂ66„öäFVÆ—fW'“¢G'VRÂ6&EG&ç6fW#¢G'VRÒ’À¢FW7DÖöFS¢RçF&vWBæ6†V6¶VBÀ¢Ò¢Ð¢7G–ÆS×·²v–GFƒ¢s#‚rÂ†V–v‡C¢s#‚r×Ð¢óà¢ÂöÆ&VÃà¢ÂöF—cà¢ÂöF—cà¢ÂöF—cà¢—Ð ¢²ò¢ÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÒD"¢4T5U$•E’…55tõ$BÔätTÔTåB’ÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÒ¢÷Ð¢·F"ÓÓÒw6V7W&—G’rbb€¢ÆF—b6Æ74æÖSÒ&FÖ–â×æVÂ#à¢ÆF—b7G–ÆS×·²F—7Æ“¢vfÆW‚rÂÆ–vä—FV×3¢v6VçFW"rÂv¢s'‚rÂÖ&v–ä&÷GFöÓ¢s‡‚r×Óà¢ÆF—b7G–ÆS×·²v–GFƒ¢sC'‚rÂ†V–v‡C¢sC'‚rÂ&÷&FW%&F—W3¢s'‚rÂ&6¶w&÷VæC¢w&v&ƒS’Â3Â#CbÂãR’rÂF—7Æ“¢vw&–BrÂÆ6T—FV×3¢v6VçFW"rÂ6öÆ÷#¢r3cVfr×Óà¢Å6†–VÆD6†V6²6—¦S×³#GÒóà¢ÂöF—cà¢ÆF—cà¢Æƒ"7G–ÆS×·²Ö&v–ã¢×Óí	ýí½Â‚]}íýÝí-ÂýÝ]½ƒÂöƒ#à¢Ç7G–ÆS×·²Ö&v–ã¢Â6öÆ÷#¢r3†S–&#RrÂföçE6—¦S¢s7‚r×Óà¢	Ý-í­‚-]íM]Ýý-ò"ý]]Í]ÝÝ½Rí­=m]Ýò]-]à¢Â÷à¢ÂöF—cà¢ÂöF—cà ¢ÆF—b7G–ÆS×·²&6¶w&÷VæC¢r3#SBrÂ&÷&FW#¢s‚6öÆ–B3#c&cC"rÂ&÷&FW%&F—W3¢sg‚rÂFF–æs¢s#G‚rÂÖ…v–GFƒ¢sS#‚rÂÖ&v–åF÷¢s#‚r×Óà¢ÆF—b7G–ÆS×·²F—7Æ“¢vfÆW‚rÂÆ–vä—FV×3¢v6VçFW"rÂv¢s‚rÂÖ&v–ä&÷GFöÓ¢s‡‚rÂFF–æs¢s'‚g‚rÂ&6¶w&÷VæC¢w&v&ƒbÂƒRÂ#’Âã’rÂ&÷&FW#¢s‚6öÆ–B&v&ƒbÂƒRÂ#’Âã#R’rÂ&÷&FW%&F—W3¢s‚rÂ6öÆ÷#¢r33FC3“’rÂföçE6—¦S¢s7‚r×Óà¢Ä¶W•&÷VæB6—¦S×³‡Òóà¢Ç7ãà¢	ýí½Â-Ý-]-ò&7'—BÝ]]]Ââ
+]òýíMýÝ]-]íÂ‚]Ý-ò"‡GGöæÇ’6öö¶–Rà¢Â÷7ãà¢ÂöF—cà ¢ÆF—b7G–ÆS×·²Ö&v–åF÷¢sg‚rÂföçE6—¦S¢s'‚rÂ6öÆ÷#¢r3†S–&#RrÂÆ–æT†V–v‡C¢ãRÂ&6¶w&÷VæC¢w&v&ƒ#SRÃ#SRÃ#SRÃã"’rÂFF–æs¢s'‚rÂ&÷&FW%&F—W3¢s‚rÂ&÷&FW#¢s‚6öÆ–B33##3r×Óà¢)ªûˆò	M½ò}ý=­}M-RÆ6öFSäUD…õ4T5$UCÂö6öFSâ‚Æ6öFSäDÔ”åõ55tõ$Eô„4ƒÂö6öFSââ	ýí½R-Ríí¢-]íB½í­=]-òÝ}à¢ÂöF—cà¢ÂöF—cà¢ÂöF—cà¢—Ð ¢²ò¢ÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÒD"¢uT”DRbDUÄõ”ÔTåBÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÓÒ¢÷Ð¢·F"ÓÓÒvwV–FRrbb€¢ÆF—b6Æ74æÖSÒ&FÖ–â×æVÂwV–FRÖ6öçF–æW"#à¢Æƒ#í
+=­í-íM--âýâ}ý=­2ÂýíMmR‚]í-Ý=2-Âöƒ#à¢Çí	ýí=í-òÝ-=­mòÂ­¢ýíM--ÂÝ-í"½íÒ}Ý½Â­½]Ý-Â‚}-½--ÂÝ-Ý]M]Ý‚ãÂ÷à ¢ÆF—b6Æ74æÖSÒ&wV–FR×7FWÖ6&B#à¢ÆF—b6Æ74æÖSÒ&wV–FR×7FWÖçVÖ&W"#ãÂöF—cà¢ÆF—b6Æ74æÖSÒ&wV–FR×7FWÖ6öçFVçB#à¢Æƒ3í	­¢ýíM=í-í--Â"ýíBÝí-í=â}­}}­
+]]Íí-²“Âöƒ3à¢ÇVÃà¢ÆÆ“à¢Ç7G&öæsí
+2£Â÷7G&öæsâ	-­½í}-R--]]2Ç7G&öæsì*½
+]mÂ
+}í-}­+³Â÷7G&öæsâà¢ÂöÆ“à¢ÆÆ“à¢Ç7G&öæsí
+2#£Â÷7G&öæsâ	-½]-Rí-½ÂÝ-­½M­R*½	=í-í-½RÝŒ+²	Í=}ÒÂ	--í½íÒÂ	]íòÂ
+ý‚"íBâ’½‚-½]-R-ó¢ÆVÓí
+-í½Í­â	Í=}Ò	­í}Ýí“ÂöVÓâ½‚ÆVÓí
+-í½Í­â
+=½==ƒÂöVÓâà¢ÂöÆ“à¢ÆÆ“à¢Ç7G&öæsí
+23£Â÷7G&öæsâ	ÝmÍ-R­Ýíý­2Ç7G&öæsì*¿	ùI"	}M­í--Â‚í-M-Â­½]Ý-<+³Â÷7G&öæsâà¢ÂöÆ“à¢ÆÆ“à¢Ç7G&öæsí
+]}=½Í-#£Â÷7G&öæsâ	-­½M­*½	=í-í-½RÝŒ+²­í]-ò	ýí­=ý-]½Â-M"-í½Í­â-í‚-í-²Â}­}²Â­íÝ-­-²‚m-]-à¢ÂöÆ“à¢Â÷VÃà¢ÂöF—cà¢ÂöF—cà ¢ÆF—b6Æ74æÖSÒ&wV–FR×7FWÖ6&B#à¢ÆF—b6Æ74æÖSÒ&wV–FR×7FWÖçVÖ&W"#ã#ÂöF—cà¢ÆF—b6Æ74æÖSÒ&wV–FR×7FWÖ6öçFVçB#à¢Æƒ3í
+Ý­ýí"ÂÍýí"‚­}-ÝR]íMÝ­í"‚å¤•“Âöƒ3à¢ÆF—b6Æ74æÖSÒ&wV–FR×FööÇ2Öw&–B#à¢ÆF—b6Æ74æÖSÒ&wV–FR×FööÂÖ6&B"7G–ÆS×·²&÷&FW#¢s‚6öÆ–B3#Sc6V"rÂ&6¶w&÷VæC¢w&v&ƒ3rÃ“’Ã#3RÃãb’r×Óà¢ÆF—cà¢ÆƒCï	ù:b
+­}-Â-]Âýí]­"…¤•Ý]"“ÂöƒCà¢Çí	ýí½Ý½’]íMÝ½’­íBæW‡Bæ§2b²&V7B’²F–Çv–æBcB²-R­íÍýíÝ]Ý-²ÂMÍÝ­‚}MÝÝ½RãÂ÷à¢ÂöF—cà¢Æ¢‡&VcÒ"÷&ö¦V7B×6÷W&6Rç¦— ¢F÷væÆöCÒ'Væ—fW'6ÂÖ&öö¶–ær×6—FR×6÷W&6Rç¦— ¢6Æ74æÖSÒ&FÖ–â×&–Ö'’ ¢7G–ÆS×·²FW‡DFV6÷&F–öã¢væöæRrÂF—7Æ“¢v–æÆ–æRÖfÆW‚rÂÆ–vä—FV×3¢v6VçFW"rÂv¢s‡‚r×Ð¢à¢ÄF÷væÆöB6—¦S×³WÒóâ
+­}-Â¤• ¢Âöà¢ÂöF—cà ¢ÆF—b6Æ74æÖSÒ&wV–FR×FööÂÖ6&B#à¢ÆF—cà¢ÆƒCï	ù:R
+Ý­ýí"Ý-í]¢„¥4ôâ“ÂöƒCà¢Çí
+í]Ý-Â-í½Í­â­íÝM==mâ­íÝ­]-Ýí=â­½]Ý-"íMÒM²ãÂ÷à¢ÂöF—cà¢Æ'WGFöâG—SÒ&'WGFöâ"6Æ74æÖSÒ&FÖ–â×6V6öæF'’"öä6Æ–6³×¶W‡÷'D6öæf–t§6öçÓà¢ÄF÷væÆöB6—¦S×³WÒóâ
+­}-Â¥4ôà¢Âö'WGFöãà¢ÂöF—cà ¢ÆF—b6Æ74æÖSÒ&wV–FR×FööÂÖ6&B#à¢ÆF—cà¢ÆƒCï	ù:B	Íýí"Ý-í]¢„¥4ôâ“ÂöƒCà¢Çí	Í=Ýí-]ÝÝâ}-]Ý=-ÂÝ]Rí]Ý]ÝÝí=â­½]Ý-rM½ãÂ÷à¢ÂöF—cà¢Æ'WGFöâG—SÒ&'WGFöâ"6Æ74æÖSÒ&FÖ–â×6V6öæF'’"öä6Æ–6³×²‚’Óâ6WE6†÷t§6öäÖöFÂ‡G'VR—Óà¢ÅWÆöB6—¦S×³WÒóâ	----Â¥4ôà¢Âö'WGFöãà¢ÂöF—cà¢ÂöF—cà¢ÂöF—cà¢ÂöF—cà ¢ÆF—b6Æ74æÖSÒ&wV–FR×7FWÖ6&B#à¢ÆF—b6Æ74æÖSÒ&wV–FR×7FWÖçVÖ&W"#ã3ÂöF—cà¢ÆF—b6Æ74æÖSÒ&wV–FR×7FWÖ6öçFVçB#à¢Æƒ3í	­íÍÝM²M½ò}ý=­Ý]-]R½‚½í­½ÍÝãÂöƒ3à¢ÆF—b7G–ÆS×·²&6¶w&÷VæC¢r3#SBrÂ&÷&FW#¢s‚6öÆ–B3#c&cC"rÂ&÷&FW%&F—W3¢s'‚rÂFF–æs¢sg‚rÂföçDfÖ–Ç“¢vÖöæ÷76RrÂföçE6—¦S¢s7‚rÂÆ–æT†V–v‡C¢ãbÂ6öÆ÷#¢r6S&S†cr×Óà¢ÆF—b7G–ÆS×·²6öÆ÷#¢r3†S–&#Rr×Óâ2â
+=-Ýí-­ý­]-í#£ÂöF—cà¢ÆF—b7G–ÆS×·²6öÆ÷#¢r3cVfr×ÓæçÒ–ç7FÆÃÂöF—cà¢ÆF—b7G–ÆS×·²6öÆ÷#¢r3†S–&#RrÂÖ&v–åF÷¢s‚r×Óâ2"â	½í­½ÍÝ½’}ý=££ÂöF—cà¢ÆF—b7G–ÆS×·²6öÆ÷#¢r3cVfr×ÓæçÒ'VâFWcÂöF—cà¢ÆF—b7G–ÆS×·²6öÆ÷#¢r3†S–&#RrÂÖ&v–åF÷¢s‚r×Óâ22â
+í­M½òí]-í=â]-]…&öGV7F–öâ“£ÂöF—cà¢ÆF—b7G–ÆS×·²6öÆ÷#¢r33FC3“’r×ÓæçÒ'Vâ'V–ÆCÂöF—cà¢ÆF—b7G–ÆS×·²6öÆ÷#¢r33FC3“’r×ÓæçÒ7F'CÂöF—cà¢ÂöF—cà¢ÂöF—cà¢ÂöF—cà¢ÂöF—cà¢—Ð¢ÂöF—cà¢ÂöÖ–ãà ¢²ò¢¥4ôâ–×÷'BÖöFÂ¢÷Ð¢·6†÷t§6öäÖöFÂbb€¢ÆF—b7G–ÆS×·²÷6—F–öã¢vf—†VBrÂ–ç6WC¢Â&6¶w&÷VæC¢w&v&ƒÃÃÃã‚’rÂ¤–æFWƒ¢ÂF—7Æ“¢vw&–BrÂÆ6T—FV×3¢v6VçFW"rÂFF–æs¢sg‚r×Óà¢ÆF—b7G–ÆS×·²&6¶w&÷VæC¢wf"‚ÒÖFÒ×7W&f6R’rÂ&÷&FW#¢s‚6öÆ–Bf"‚ÒÖFÒÖ&÷&FW"’rÂ&÷&FW%&F—W3¢sg‚rÂFF–æs¢s#G‚rÂÖ…v–GFƒ¢sSc‚rÂv–GFƒ¢sRr×Óà¢ÆF—b7G–ÆS×·²F—7Æ“¢vfÆW‚rÂ§W7F–g”6öçFVçC¢w76RÖ&WGvVVârÂÆ–vä—FV×3¢v6VçFW"rÂÖ&v–ä&÷GFöÓ¢sG‚r×Óà¢Æƒ27G–ÆS×·²Ö&v–ã¢Â6öÆ÷#¢r6ffbr×Óí	Íýí"­íÝM==m‚„¥4ôâ“Âöƒ3à¢Æ'WGFöâG—SÒ&'WGFöâ"öä6Æ–6³×²‚’Óâ6WE6†÷t§6öäÖöFÂ†fÇ6R—Ò7G–ÆS×·²&6¶w&÷VæC¢væöæRrÂ&÷&FW#¢Â6öÆ÷#¢r3†S–&#RrÂ7W'6÷#¢wö–çFW"r×Óà¢Å‚6—¦S×³#Òóà¢Âö'WGFöãà¢ÂöF—cà¢ÇFW‡F&V¢7G–ÆS×·²v–GFƒ¢sRrÂ†V–v‡C¢sƒ‚rÂ&6¶w&÷VæC¢r33##3rÂ&÷&FW#¢s‚6öÆ–B3&C3sC‚rÂ&÷&FW%&F—W3¢s‚rÂ6öÆ÷#¢r6ffbrÂFF–æs¢s'‚rÂföçDfÖ–Ç“¢vÖöæ÷76RrÂföçE6—¦S¢s'‚rÂ&÷…6—¦–æs¢v&÷&FW"Ö&÷‚rÂÖ&v–ä&÷GFöÓ¢sg‚r×Ð¢fÇVS×¶§6öä–çWGÐ¢öä6†ævS×²†R’Óâ6WD§6öä–çWB†RçF&vWBçfÇVR—Ð¢Æ6V†öÆFW#Òw²&æÖR#¢-	Íí’Í=}Ò"Â'&öGV7G2#¢²ââå×Òp¢óà¢ÆF—b7G–ÆS×·²F—7Æ“¢vfÆW‚rÂv¢s‚rÂ§W7F–g”6öçFVçC¢vfÆW‚ÖVæBr×Óà¢Æ'WGFöâG—SÒ&'WGFöâ"6Æ74æÖSÒ&FÖ–â×6V6öæF'’"öä6Æ–6³×²‚’Óâ6WE6†÷t§6öäÖöFÂ†fÇ6R—Óà¢	í-Í]Ý ¢Âö'WGFöãà¢Æ'WGFöâG—SÒ&'WGFöâ"6Æ74æÖSÒ&FÖ–â×&–Ö'’"öä6Æ–6³×¶–×÷'D6öæf–t§6öçÓà¢	ýÍ]Ý-Â­íÝM==mà¢Âö'WGFöãà¢ÂöF—cà¢ÂöF—cà¢ÂöF—cà¢—Ð¢ÂöF—cà¢“°§Ð 

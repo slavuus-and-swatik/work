@@ -1,5 +1,6 @@
-import { type Config } from './shinslot';
+import { DEFAULT_DELIVERY_PRICING, type Config } from './shinslot';
 import { getActiveConfig } from './site-config';
+import { isTrustedAdmin } from './admin-auth';
 
 export const tenantSlug = 'demo';
 
@@ -40,6 +41,13 @@ export type OrderRow = {
   customer_email?: string;
   delivery_type: 'pickup' | 'delivery';
   delivery_address?: string;
+  delivery_latitude?: number;
+  delivery_longitude?: number;
+  subtotal?: number;
+  discount?: number;
+  delivery_cost?: number;
+  rejection_reason?: string;
+  customer_access_token?: string;
   payment_method: 'online' | 'cash' | 'transfer';
   payment_status: 'paid' | 'pending';
   status: 'new' | 'processing' | 'completed' | 'cancelled';
@@ -391,6 +399,42 @@ export async function tenant() {
   return row;
 }
 
+/** A metadata-only view for platform operators; never includes customer records or secrets. */
+export function platformOverview() {
+  const tenants = [...globalState.__shinslot_tenants!.values()];
+  const bookings = globalState.__shinslot_bookings!;
+  const orders = globalState.__shinslot_orders!;
+  const companies = tenants.map((row) => {
+    let published: Config = getActiveConfig();
+    try { published = { ...published, ...JSON.parse(row.published) as Partial<Config> }; } catch { /* report incomplete config below */ }
+    const draft = (() => { try { return JSON.parse(row.draft) as Partial<Config>; } catch { return null; } })();
+    const complete = Boolean(published.name && published.phone && published.email && (published.products?.length || published.services?.length));
+    return {
+      slug: row.slug,
+      ownerId: row.owner_id,
+      name: published.name || row.slug,
+      email: published.email || null,
+      phone: published.phone || null,
+      siteMode: published.siteMode,
+      updatedAt: row.updated_at,
+      hasDraftChanges: Boolean(draft && JSON.stringify(draft) !== row.published),
+      configurationComplete: complete,
+      bookings: bookings.filter((item) => item.tenant_slug === row.slug).length,
+      orders: orders.filter((item) => item.tenant_slug === row.slug).length,
+    };
+  });
+  return {
+    storage: 'in-memory-demo',
+    uptimeSeconds: Math.floor(process.uptime()),
+    companies,
+    totals: {
+      companies: companies.length,
+      bookings: bookings.length,
+      orders: orders.length,
+    },
+  };
+}
+
 export async function config(published = true): Promise<Config> {
   const row = await tenant();
   const base = getActiveConfig();
@@ -398,7 +442,7 @@ export async function config(published = true): Promise<Config> {
   try {
     const parsed = JSON.parse(published ? row.published : row.draft) as Config;
     if (parsed && typeof parsed === 'object') {
-      return { ...base, ...parsed };
+      return { ...base, ...parsed, deliveryPricing: parsed.deliveryPricing || { ...DEFAULT_DELIVERY_PRICING, freeAtSubtotal: parsed.freeDeliveryThreshold ?? DEFAULT_DELIVERY_PRICING.freeAtSubtotal } };
     }
     return base;
   } catch {
@@ -407,11 +451,10 @@ export async function config(published = true): Promise<Config> {
 }
 
 export function signedIn(request?: Request) {
-  if (request) {
-    const headerId = request.headers.get('oai-authenticated-user-id');
-    if (headerId) return headerId;
-  }
-  return 'demo-admin';
+  if (!request) return null;
+  const headerId = request.headers.get('oai-authenticated-user-id');
+  if (process.env.TRUST_PLATFORM_AUTH_HEADER === 'true' && headerId) return headerId;
+  return isTrustedAdmin(request) ? 'admin-session' : null;
 }
 
 export async function admin(request?: Request) {
@@ -446,12 +489,18 @@ export async function getOrders(): Promise<OrderRow[]> {
 
 export async function createOrder(data: {
   items: unknown[];
+  subtotal: number;
+  discount: number;
+  deliveryCost: number;
   total: number;
   customerName: string;
   customerPhone: string;
   customerEmail?: string;
   deliveryType: 'pickup' | 'delivery';
   deliveryAddress?: string;
+  deliveryLatitude?: number;
+  deliveryLongitude?: number;
+  customerAccessToken: string;
   paymentMethod: 'online' | 'cash' | 'transfer';
   paymentStatus?: 'paid' | 'pending';
   comment?: string;
@@ -459,7 +508,7 @@ export async function createOrder(data: {
   if (!globalState.__shinslot_orders) {
     globalState.__shinslot_orders = [];
   }
-  const id = 'ORD-' + Math.floor(1000 + Math.random() * 9000);
+  const id = 'ORD-' + crypto.randomUUID().slice(0, 8).toUpperCase();
   const row: OrderRow = {
     id,
     tenant_slug: tenantSlug,
@@ -470,8 +519,14 @@ export async function createOrder(data: {
     customer_email: data.customerEmail ? String(data.customerEmail).trim() : undefined,
     delivery_type: data.deliveryType === 'delivery' ? 'delivery' : 'pickup',
     delivery_address: data.deliveryAddress ? String(data.deliveryAddress).trim() : undefined,
+    delivery_latitude: data.deliveryLatitude,
+    delivery_longitude: data.deliveryLongitude,
+    subtotal: data.subtotal,
+    discount: data.discount,
+    delivery_cost: data.deliveryCost,
+    customer_access_token: data.customerAccessToken,
     payment_method: data.paymentMethod || 'cash',
-    payment_status: data.paymentStatus || (data.paymentMethod === 'online' ? 'paid' : 'pending'),
+    payment_status: 'pending',
     status: 'new',
     comment: data.comment ? String(data.comment).trim() : undefined,
     created_at: new Date().toISOString(),
@@ -481,11 +536,12 @@ export async function createOrder(data: {
   return row;
 }
 
-export async function updateOrderStatus(id: string, status: string, paymentStatus?: string): Promise<boolean> {
+export async function updateOrderStatus(id: string, status: string, paymentStatus?: string, rejectionReason?: string): Promise<boolean> {
   const list = globalState.__shinslot_orders || [];
   const order = list.find((o) => o.id === id);
   if (!order) return false;
   if (status) order.status = status as OrderRow['status'];
   if (paymentStatus) order.payment_status = paymentStatus as OrderRow['payment_status'];
+  if (status === 'cancelled') order.rejection_reason = rejectionReason?.trim().slice(0, 500) || undefined;
   return true;
 }

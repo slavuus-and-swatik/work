@@ -214,6 +214,16 @@
   z-index: 30;
 }
 
+@media (max-width: 720px) {
+  .admin-top { position: relative; align-items: flex-start; flex-wrap: wrap; padding: 10px 12px; gap: 10px; }
+  .admin-top-left { min-width: 0; flex: 1 1 100%; }
+  .admin-top-title { min-width: 0; }
+  .admin-top-right { width: 100%; flex-wrap: wrap; gap: 7px; }
+  .admin-top-right > * { flex: 1 1 auto; justify-content: center; min-width: 0; }
+  .client-view-link { padding: 8px 10px; white-space: normal; text-align: center; }
+  .admin-tab-nav { top: 0; }
+}
+
 .admin-top-left {
   display: flex;
   align-items: center;
