@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import {
   ArrowRight,
   ArrowUpRight,
@@ -37,6 +38,9 @@ import {
 } from '@/lib/shinslot';
 import { PWAInstallButton } from '@/components/pwa-install-button';
 import { ScrollReveal } from '@/components/scroll-reveal';
+import { calculateOrder, normalizeRussianPhone } from '@/lib/commerce';
+
+const AddressPicker = dynamic(() => import('@/components/address-picker'), { ssr: false });
 
 type CartItem = {
   product: Product;
@@ -96,19 +100,21 @@ export default function Home() {
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [promoCodeInput, setPromoCodeInput] = useState('');
   const [promoApplied, setPromoApplied] = useState(false);
+  const [promoError, setPromoError] = useState('');
   const [deliveryType, setDeliveryType] = useState<'pickup' | 'delivery'>('pickup');
 
   // Checkout Modal & Payment state
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
-  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
-  const [paymentTab, setPaymentTab] = useState<'card' | 'sbp'>('card');
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
+  const [phoneTouched, setPhoneTouched] = useState(false);
   const [customerAddress, setCustomerAddress] = useState('');
+  const [deliveryPoint, setDeliveryPoint] = useState<{ lat: number; lng: number } | null>(null);
+  const [mapOpen, setMapOpen] = useState(false);
   const [customerComment, setCustomerComment] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<'online' | 'cash' | 'transfer'>('online');
+  const [paymentMethod, setPaymentMethod] = useState<'online' | 'cash' | 'transfer'>('cash');
   const [submittingOrder, setSubmittingOrder] = useState(false);
-  const [completedOrder, setCompletedOrder] = useState<{ id: string; total: number } | null>(null);
+  const [completedOrder, setCompletedOrder] = useState<{ id: string; total: number; token: string } | null>(null);
 
   // Load config
   useEffect(() => {
@@ -195,30 +201,26 @@ export default function Home() {
   }, [cart]);
 
   const rawSubtotal = useMemo(() => {
-    return cart.reduce((acc, item) => acc + item.product.price * item.quantity, 0);
-  }, [cart]);
+    const products = new Map((config.products || []).map((product) => [product.id, product.price]));
+    return cart.reduce((acc, item) => acc + (products.get(item.product.id) || 0) * item.quantity, 0);
+  }, [cart, config.products]);
 
-  const discountAmount = useMemo(() => {
-    if (promoApplied && config.promoCode?.discountPercent) {
-      return Math.round((rawSubtotal * config.promoCode.discountPercent) / 100);
-    }
-    return 0;
-  }, [rawSubtotal, promoApplied, config.promoCode]);
+  const currentQuote = useMemo(() => {
+    try { return calculateOrder(config, cart.map((item) => ({ productId: item.product.id, quantity: item.quantity })), promoApplied ? promoCodeInput : undefined, deliveryType); }
+    catch { return { subtotal: rawSubtotal, discount: 0, delivery: 0, total: rawSubtotal, items: [] }; }
+  }, [config, cart, promoApplied, promoCodeInput, deliveryType, rawSubtotal]);
+  const discountAmount = currentQuote.discount;
+  const deliveryPrice = currentQuote.delivery;
+  const finalTotal = currentQuote.total;
 
-  const deliveryPrice = useMemo(() => {
-    if (deliveryType === 'pickup') return 0;
-    if (config.freeDeliveryThreshold && rawSubtotal >= config.freeDeliveryThreshold) return 0;
-    return config.deliveryCost || 350;
-  }, [deliveryType, rawSubtotal, config.deliveryCost, config.freeDeliveryThreshold]);
-
-  const finalTotal = Math.max(0, rawSubtotal - discountAmount + deliveryPrice);
-
-  function applyPromo() {
-    if (config.promoCode && promoCodeInput.trim().toUpperCase() === config.promoCode.code.toUpperCase()) {
+  async function applyPromo() {
+    setPromoError(''); setPromoApplied(false);
+    try {
+      const response = await fetch('/api/promo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: cart.map((item) => ({ productId: item.product.id, quantity: item.quantity })), promoCode: promoCodeInput, deliveryType }) });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error || 'Такого промокода нет');
       setPromoApplied(true);
-    } else {
-      alert('Неверный промокод');
-    }
+    } catch (error) { setPromoError(error instanceof Error ? error.message : 'Такого промокода нет'); }
   }
 
   async function handleOrderSubmit(e: React.FormEvent) {
@@ -227,21 +229,18 @@ export default function Home() {
       alert('Укажите имя и телефон для связи');
       return;
     }
+    if (!normalizeRussianPhone(customerPhone)) { setPhoneTouched(true); alert('Введите российский номер: 10 или 11 цифр, начало 7 или 8.'); return; }
     if (deliveryType === 'delivery' && !customerAddress.trim()) {
       alert('Укажите адрес доставки');
       return;
     }
 
-    if (paymentMethod === 'online') {
-      setIsCheckoutOpen(false);
-      setIsPaymentModalOpen(true);
-      return;
-    }
+    if (paymentMethod === 'online') { alert('Онлайн-эквайринг ещё не подключён. Выберите оплату при получении или перевод.'); return; }
 
-    await executeOrderCreation('pending');
+    await executeOrderCreation();
   }
 
-  async function executeOrderCreation(payStatus: 'paid' | 'pending') {
+  async function executeOrderCreation() {
     setSubmittingOrder(true);
     try {
       const orderItems = cart.map((item) => ({
@@ -257,24 +256,24 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           items: orderItems,
-          total: finalTotal,
+          promoCode: promoApplied ? promoCodeInput : undefined,
           customerName,
           customerPhone,
           deliveryType,
           deliveryAddress: customerAddress,
+          deliveryLatitude: deliveryPoint?.lat,
+          deliveryLongitude: deliveryPoint?.lng,
           paymentMethod,
-          paymentStatus: payStatus,
           comment: customerComment,
         }),
       });
 
-      if (!res.ok) throw new Error('Ошибка создания заказа');
+      if (!res.ok) { const error = await res.json().catch(() => ({})) as { error?: string }; throw new Error(error.error || 'Ошибка создания заказа'); }
       const data = await res.json();
-      setCompletedOrder({ id: data.order.id, total: data.order.total });
+      setCompletedOrder({ id: data.order.id, total: data.order.total, token: data.order.customerAccessToken });
       setCart([]);
       setIsCartOpen(false);
       setIsCheckoutOpen(false);
-      setIsPaymentModalOpen(false);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Не удалось оформить заказ');
     } finally {
@@ -356,11 +355,6 @@ export default function Home() {
 
         <div className="header-actions">
           <PWAInstallButton />
-
-          <a href={`tel:${config.phone.replace(/[^0-9+]/g, '')}`} className="header-contact-pill">
-            <Phone size={14} />
-            <span>{config.phone}</span>
-          </a>
 
           {showShop && cartTotalItems > 0 && (
             <button
@@ -538,8 +532,8 @@ export default function Home() {
                 {filteredProducts.map((p) => {
                   const inCart = cart.find((item) => item.product.id === p.id);
                   return (
-                    <div key={p.id} className="product-card">
-                      <div className="product-image-wrap">
+                  <div key={p.id} className="product-card">
+                      <Link href={`/product/${encodeURIComponent(p.id)}`} className="product-image-wrap" aria-label={`Подробнее о товаре ${p.name}`}>
                         {p.imageUrl ? (
                           <img src={p.imageUrl} alt={p.name} loading="lazy" />
                         ) : (
@@ -548,11 +542,11 @@ export default function Home() {
                           </div>
                         )}
                         {p.badge && <span className="product-badge">{p.badge}</span>}
-                      </div>
+                      </Link>
 
                       <div className="product-body">
                         {p.category && <span className="product-category-tag">{p.category}</span>}
-                        <h3 className="product-title">{p.name}</h3>
+                        <h3 className="product-title"><Link href={`/product/${encodeURIComponent(p.id)}`}>{p.name}</Link></h3>
                         <p className="product-desc">{p.description}</p>
 
                         <div className="product-footer">
@@ -886,6 +880,7 @@ export default function Home() {
                         <Check size={14} /> Промокод применен (-{config.promoCode?.discountPercent}%)
                       </div>
                     )}
+                    {promoError && <div role="alert" style={{ color: '#ef4444', fontSize: '12px', fontWeight: 700, marginTop: '6px' }}>{promoError}</div>}
                   </div>
 
                   {/* Delivery Selection */}
@@ -981,9 +976,11 @@ export default function Home() {
               </button>
             </div>
 
-            <div style={{ background: '#0b0e14', padding: '12px 16px', borderRadius: '12px', border: '1px solid #262f42', marginBottom: '20px', display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: '#8e9bb5', fontSize: '13px' }}>Сумма заказа:</span>
-              <strong style={{ color: '#38bdf8', fontSize: '16px' }}>{money(finalTotal)}</strong>
+            <div style={{ background: '#0b0e14', padding: '12px 16px', borderRadius: '12px', border: '1px solid #262f42', marginBottom: '20px', display: 'grid', gap: '8px', fontSize: '13px' }}>
+              <div className="cart-summary-line"><span>Стоимость товаров:</span><strong>{money(rawSubtotal)}</strong></div>
+              {discountAmount > 0 && <div className="cart-summary-line"><span>Скидка:</span><strong>-{money(discountAmount)}</strong></div>}
+              <div className="cart-summary-line"><span>Доставка:</span><strong>{deliveryPrice ? money(deliveryPrice) : 'Бесплатно'}</strong></div>
+              <div className="cart-summary-total"><span>Итого:</span><span>{money(finalTotal)}</span></div>
             </div>
 
             <form onSubmit={handleOrderSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -1006,13 +1003,23 @@ export default function Home() {
                   Номер телефона: *
                 </label>
                 <input
-                  type="tel"
+                  type="text"
                   required
                   placeholder="+7 (999) 000-00-00"
                   value={customerPhone}
-                  onChange={(e) => setCustomerPhone(e.target.value)}
+                  inputMode="numeric"
+                  maxLength={11}
+                  autoComplete="tel-national"
+                  onBlur={() => setPhoneTouched(true)}
+                  onBeforeInput={(e) => { const event = e.nativeEvent as InputEvent; const text = event.data; if (event.inputType !== 'insertFromPaste' && text && /\D/.test(text)) e.preventDefault(); }}
+                  onChange={(e) => setCustomerPhone(e.target.value.replace(/\D/g, '').slice(0, 11))}
+                  onPaste={(e) => { e.preventDefault(); const input = e.currentTarget; const pasted = e.clipboardData.getData('text').replace(/\D/g, ''); const start = input.selectionStart ?? customerPhone.length; const end = input.selectionEnd ?? start; setCustomerPhone(`${customerPhone.slice(0, start)}${pasted}${customerPhone.slice(end)}`.slice(0, 11)); }}
+                  onDrop={(e) => e.preventDefault()}
                   style={{ width: '100%', height: '44px', background: '#0b0e14', border: '1px solid #262f42', borderRadius: '10px', color: '#fff', padding: '0 12px', boxSizing: 'border-box' }}
                 />
+                {((phoneTouched || customerPhone.length > 0) && customerPhone.length < 10) && <small role="alert" style={{ color: '#fca5a5' }}>Введите ещё {10 - customerPhone.length} цифр российского номера.</small>}
+                {customerPhone.length === 10 && !normalizeRussianPhone(customerPhone) && <small role="alert" style={{ color: '#fca5a5' }}>Проверьте российский номер из 10 цифр.</small>}
+                {customerPhone.length === 11 && !normalizeRussianPhone(customerPhone) && <small role="alert" style={{ color: '#fca5a5' }}>Номер из 11 цифр должен начинаться с 7 или 8.</small>}
               </div>
 
               {deliveryType === 'delivery' && (
@@ -1020,14 +1027,11 @@ export default function Home() {
                   <label className="input-label" style={{ marginBottom: '4px' }}>
                     Адрес доставки (город, улица, дом, квартира): *
                   </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="г. Москва, ул. Арбат 10, кв. 25"
-                    value={customerAddress}
-                    onChange={(e) => setCustomerAddress(e.target.value)}
-                    style={{ width: '100%', height: '44px', background: '#0b0e14', border: '1px solid #262f42', borderRadius: '10px', color: '#fff', padding: '0 12px', boxSizing: 'border-box' }}
-                  />
+                  <div className="checkout-address-row">
+                    <input type="text" required maxLength={400} placeholder="г. Москва, ул. Арбат 10, кв. 25" value={customerAddress} onChange={(e) => setCustomerAddress(e.target.value)} style={{ width: '100%', height: '44px', background: '#0b0e14', border: '1px solid #262f42', borderRadius: '10px', color: '#fff', padding: '0 12px', boxSizing: 'border-box' }} />
+                    <button type="button" className="map-pick-button" onClick={() => setMapOpen(true)}><MapPin size={16} /> Выбрать на карте</button>
+                  </div>
+                  {deliveryPoint && <small style={{ color: '#8e9bb5' }}>Координаты точки сохранены: {deliveryPoint.lat.toFixed(5)}, {deliveryPoint.lng.toFixed(5)}</small>}
                 </div>
               )}
 
@@ -1041,10 +1045,10 @@ export default function Home() {
                       type="radio"
                       name="paymethod"
                       checked={paymentMethod === 'online'}
-                      onChange={() => setPaymentMethod('online')}
+                      disabled
                     />
-                    <CreditCard size={18} color="#38bdf8" />
-                    <span style={{ fontSize: '13px' }}>Банковская карта онлайн / СБП (Быстрая оплата)</span>
+                    <CreditCard size={18} color="#64748b" />
+                    <span style={{ fontSize: '13px', color: '#94a3b8' }}>Онлайн-оплата временно недоступна: эквайринг не подключён</span>
                   </label>
 
                   <label style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#0b0e14', padding: '10px 14px', borderRadius: '10px', border: '1px solid #262f42', cursor: 'pointer' }}>
@@ -1090,119 +1094,9 @@ export default function Home() {
                 className="cart-checkout-btn"
                 style={{ marginTop: '10px' }}
               >
-                {paymentMethod === 'online' ? 'Перейти к оплате картой / СБП' : 'Подтвердить заказ'}
+                {submittingOrder ? 'Отправляем заказ…' : 'Подтвердить заказ'}
               </button>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* Online Payment Gateway Simulation Modal (ЮKassa / Т-Банк / СБП) */}
-      {isPaymentModalOpen && (
-        <div className="cart-drawer-backdrop" onClick={() => setIsPaymentModalOpen(false)}>
-          <div
-            className="payment-modal-card"
-            style={{ margin: 'auto' }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #262f42', paddingBottom: '14px' }}>
-              <div>
-                <div style={{ fontSize: '12px', color: '#8e9bb5', fontWeight: 700 }}>БЕЗОПАСНЫЙ ПЛАТЕЖНЫЙ ШЛЮЗ</div>
-                <h3 style={{ margin: 0, fontSize: '20px' }}>Оплата заказа: {money(finalTotal)}</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsPaymentModalOpen(false)}
-                style={{ background: 'none', border: 0, color: '#8e9bb5', cursor: 'pointer' }}
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="payment-tab-row">
-              <button
-                type="button"
-                className={`payment-tab-btn ${paymentTab === 'card' ? 'active' : ''}`}
-                onClick={() => setPaymentTab('card')}
-              >
-                <CreditCard size={15} /> Банковская карта
-              </button>
-              <button
-                type="button"
-                className={`payment-tab-btn ${paymentTab === 'sbp' ? 'active' : ''}`}
-                onClick={() => setPaymentTab('sbp')}
-              >
-                <QrCode size={15} /> Система Быстрых Платежей (СБП)
-              </button>
-            </div>
-
-            {paymentTab === 'card' ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                <div>
-                  <label style={{ fontSize: '12px', color: '#8e9bb5', display: 'block', marginBottom: '6px' }}>
-                    Номер карты:
-                  </label>
-                  <input
-                    type="text"
-                    defaultValue="2200 7012 3456 7890"
-                    placeholder="0000 0000 0000 0000"
-                    style={{ width: '100%', height: '46px', background: '#0b0e14', border: '1px solid #262f42', borderRadius: '10px', color: '#fff', padding: '0 14px', fontFamily: 'monospace', fontSize: '15px', boxSizing: 'border-box' }}
-                  />
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                  <div>
-                    <label style={{ fontSize: '12px', color: '#8e9bb5', display: 'block', marginBottom: '6px' }}>
-                      Срок действия:
-                    </label>
-                    <input
-                      type="text"
-                      defaultValue="12/28"
-                      placeholder="ММ/ГГ"
-                      style={{ width: '100%', height: '46px', background: '#0b0e14', border: '1px solid #262f42', borderRadius: '10px', color: '#fff', padding: '0 14px', fontFamily: 'monospace', fontSize: '15px', boxSizing: 'border-box' }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: '12px', color: '#8e9bb5', display: 'block', marginBottom: '6px' }}>
-                      CVC / CVV код:
-                    </label>
-                    <input
-                      type="password"
-                      defaultValue="777"
-                      placeholder="��••"
-                      maxLength={3}
-                      style={{ width: '100%', height: '46px', background: '#0b0e14', border: '1px solid #262f42', borderRadius: '10px', color: '#fff', padding: '0 14px', fontFamily: 'monospace', fontSize: '15px', boxSizing: 'border-box' }}
-                    />
-                  </div>
-                </div>
-
-                <div style={{ background: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.2)', padding: '12px', borderRadius: '10px', fontSize: '12px', color: '#93c5fd' }}>
-                  🔒 Безопасное 256-битное шифрование. Данные передаются напрямую в платежный процессинг (ЮKassa / Т-Банк).
-                </div>
-              </div>
-            ) : (
-              <div style={{ textAlign: 'center', padding: '20px 0' }}>
-                <div style={{ width: '160px', height: '160px', background: '#fff', borderRadius: '16px', padding: '12px', margin: '0 auto 16px', display: 'grid', placeItems: 'center' }}>
-                  <QrCode size={136} color="#000" />
-                </div>
-                <div style={{ fontSize: '14px', fontWeight: 800, color: '#fff', marginBottom: '6px' }}>
-                  Отсканируйте QR-код в приложении любого банка
-                </div>
-                <div style={{ fontSize: '12px', color: '#8e9bb5' }}>
-                  Сбербанк, Т-Банк, ВТБ, Альфа-Банк или СБП
-                </div>
-              </div>
-            )}
-
-            <button
-              type="button"
-              disabled={submittingOrder}
-              onClick={() => executeOrderCreation('paid')}
-              className="cart-checkout-btn"
-              style={{ marginTop: '20px', width: '100%' }}
-            >
-              {submittingOrder ? 'Обработка платежа...' : `Оплатить ${money(finalTotal)} (Демо)`}
-            </button>
           </div>
         </div>
       )}
@@ -1226,9 +1120,11 @@ export default function Home() {
             </p>
 
             <div style={{ background: '#0b0e14', padding: '16px', borderRadius: '12px', border: '1px solid #262f42', textAlign: 'left', fontSize: '13px', lineHeight: 1.6, color: '#e2e8f0', marginBottom: '20px' }}>
-              <div>✅ Менеджер уже получил уведомление и свяжется с вами по указанному номеру.</div>
-              <div style={{ marginTop: '6px' }}>✅ Заказ сохранен в системе и отображается в панели управления.</div>
+              <div>✅ Заказ сохранён. Откройте страницу статуса заказа, чтобы увидеть решение магазина.</div>
+              <div style={{ marginTop: '6px' }}>✅ Если заказ отклонят, причина появится там же.</div>
             </div>
+
+            <Link className="cart-checkout-btn" href={`/order/${encodeURIComponent(completedOrder.id)}?token=${encodeURIComponent(completedOrder.token)}`} style={{ width: '100%', marginBottom: '10px' }}>Отслеживать статус заказа</Link>
 
             <button
               type="button"
@@ -1241,6 +1137,8 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      {mapOpen && <AddressPicker initialPoint={deliveryPoint} onClose={() => setMapOpen(false)} onSelect={(address, point) => { setCustomerAddress(address); setDeliveryPoint(point); }} />}
 
       {/* Footer */}
       <footer className="app-footer shell">

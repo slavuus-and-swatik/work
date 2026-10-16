@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import {
   money,
+  DEFAULT_DELIVERY_PRICING,
   presets,
   type Booking,
   type Config,
@@ -53,6 +54,14 @@ function parseAddOns(val: unknown): string[] {
     } catch {}
   }
   return [];
+}
+
+function formatDeliveryTiers(tiers: Array<{ from: number; amount: number }> | undefined) {
+  return (tiers || []).map((tier) => `${tier.from}:${tier.amount}`).join('\n');
+}
+
+function parseDeliveryTiers(value: string) {
+  return value.split('\n').map((line) => line.split(':').map(Number)).filter(([from, amount]) => Number.isFinite(from) && from > 0 && Number.isFinite(amount) && amount >= 0).map(([from, amount]) => ({ from, amount }));
 }
 
 type Tab =
@@ -141,80 +150,51 @@ export default function AdminDashboard({ onExit, initialTab = 'overview', onConf
   const [notice, setNotice] = useState('');
   const [hasChanges, setHasChanges] = useState(false);
 
-  // Authentication State (default password: 12345)
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
-    try {
-      return sessionStorage.getItem('admin_authenticated') === 'true';
-    } catch {
-      return false;
-    }
-  });
+  // Admin access is verified by the server session endpoint.
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [passwordInput, setPasswordInput] = useState('');
   const [passwordError, setPasswordError] = useState('');
+  const [lockRemaining, setLockRemaining] = useState(0);
   const [showPassword, setShowPassword] = useState(false);
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
 
   // Role: 'client' (buyer of the template) vs 'developer' (creator / agency)
   const [role, setRole] = useState<'client' | 'developer'>('client');
 
-  function handleLogin(e: React.FormEvent) {
+  async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
-    const correctPassword = config.adminPassword || '12345';
-    if (passwordInput.trim() === correctPassword) {
-      setIsAuthenticated(true);
-      try {
-        sessionStorage.setItem('admin_authenticated', 'true');
-      } catch {}
-      setPasswordError('');
-      setPasswordInput('');
-    } else {
-      setPasswordError('Неверный пароль. Попробуйте еще раз.');
-    }
-  }
-
-  function handleLogout() {
-    setIsAuthenticated(false);
+    if (lockRemaining > 0) return;
+    setPasswordError('Проверяем пароль…');
     try {
-      sessionStorage.removeItem('admin_authenticated');
-    } catch {}
-  }
-
-  async function handleChangePassword(e: React.FormEvent) {
-    e.preventDefault();
-    if (!newPassword.trim()) {
-      alert('Введите новый пароль');
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      alert('Пароли не совпадают');
-      return;
-    }
-    const updated = { ...config, adminPassword: newPassword.trim() };
-    setConfig(updated);
-    onConfigChange?.(updated);
-    setSaving(true);
-    setNotice('Сохраняем новый пароль...');
-    try {
-      const r = await fetch('/api/config', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config: updated, publish: true }),
-      });
-      if (r.ok) {
-        setNotice('✓ Пароль администратора успешно изменен!');
-        setNewPassword('');
-        setConfirmPassword('');
-      } else {
-        setNotice('Ошибка при сохранении пароля');
+      const response = await fetch('/api/admin/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: passwordInput }) });
+      const result = await response.json() as { error?: string; attemptsLeft?: number; blockedForSeconds?: number };
+      if (!response.ok) {
+        const wait = result.blockedForSeconds;
+        if (wait) setLockRemaining(wait);
+        setPasswordError(wait ? 'Вход временно заблокирован' : `${result.error || 'Неверный пароль'}${result.attemptsLeft ? `. Осталось попыток: ${result.attemptsLeft}` : ''}`);
+        return;
       }
-    } catch {
-      setNotice('Ошибка сети при сохранении');
-    } finally {
-      setSaving(false);
-    }
+      setIsAuthenticated(true); setPasswordError(''); setPasswordInput(''); setLockRemaining(0);
+    } catch { setPasswordError('Не удалось связаться с сервером. Повторите попытку.'); }
   }
+
+  async function handleLogout() {
+    await fetch('/api/admin/session', { method: 'DELETE' }).catch(() => undefined);
+    setIsAuthenticated(false);
+  }
+
+  useEffect(() => {
+    fetch('/api/admin/session', { cache: 'no-store' })
+      .then((response) => response.ok ? response.json() : null)
+      .then((result: { authenticated?: boolean } | null) => setIsAuthenticated(Boolean(result?.authenticated)))
+      .catch(() => setIsAuthenticated(false));
+  }, []);
+
+  useEffect(() => {
+    if (lockRemaining <= 0) return;
+    const timer = window.setInterval(() => setLockRemaining((remaining) => Math.max(0, remaining - 1)), 1000);
+    return () => window.clearInterval(timer);
+  }, [lockRemaining > 0]);
+
 
   // Search & Filters
   const [productSearch, setProductSearch] = useState('');
@@ -227,6 +207,7 @@ export default function AdminDashboard({ onExit, initialTab = 'overview', onConf
   const [showJsonModal, setShowJsonModal] = useState(false);
 
   useEffect(() => {
+    if (!isAuthenticated) return;
     let ignore = false;
     async function init() {
       try {
@@ -247,7 +228,7 @@ export default function AdminDashboard({ onExit, initialTab = 'overview', onConf
     return () => {
       ignore = true;
     };
-  }, []);
+  }, [isAuthenticated]);
 
   async function loadData() {
     try {
@@ -448,16 +429,16 @@ export default function AdminDashboard({ onExit, initialTab = 'overview', onConf
     }
   }
 
-  async function updateOrderStatus(id: string, newStatus: string, payStatus?: string) {
+  async function updateOrderStatus(id: string, newStatus: string, payStatus?: string, rejectionReason?: string) {
     try {
       const r = await fetch(`/api/orders/${encodeURIComponent(id)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus, paymentStatus: payStatus }),
+        body: JSON.stringify({ status: newStatus, paymentStatus: payStatus, rejectionReason }),
       });
       if (r.ok) {
         setOrders((prev) =>
-          prev.map((o) => (o.id === id ? { ...o, status: newStatus as Order['status'], paymentStatus: (payStatus || o.paymentStatus) as Order['paymentStatus'] } : o))
+          prev.map((o) => (o.id === id ? { ...o, status: newStatus as Order['status'], paymentStatus: (payStatus || o.paymentStatus) as Order['paymentStatus'], rejectionReason } : o))
         );
         setNotice(`Статус заказа ${id} обновлен на «${newStatus}»`);
       }
@@ -583,7 +564,7 @@ export default function AdminDashboard({ onExit, initialTab = 'overview', onConf
     return list;
   }, [config.siteMode, config.products, config.services, orders.length, bookings.length]);
 
-  // If not authenticated, require password (default 12345)
+  // Authentication is confirmed by the server-side HttpOnly session.
   if (!isAuthenticated) {
     return (
       <div className="admin-login-screen">
@@ -603,6 +584,9 @@ export default function AdminDashboard({ onExit, initialTab = 'overview', onConf
                 className="admin-login-input"
                 placeholder="Введите пароль..."
                 value={passwordInput}
+                minLength={32}
+                maxLength={32}
+                autoComplete="current-password"
                 onChange={(e) => {
                   setPasswordInput(e.target.value);
                   setPasswordError('');
@@ -621,18 +605,17 @@ export default function AdminDashboard({ onExit, initialTab = 'overview', onConf
 
             {passwordError && (
               <div style={{ color: '#ef4444', fontSize: '13px', marginBottom: '14px', textAlign: 'center', fontWeight: 600 }}>
-                {passwordError}
+                {passwordError}{lockRemaining > 0 && `: ${Math.floor(lockRemaining / 60)}:${String(lockRemaining % 60).padStart(2, '0')}`}
               </div>
             )}
 
-            <button type="submit" className="admin-login-btn">
+            <button type="submit" className="admin-login-btn" disabled={lockRemaining > 0}>
               Войти в панель <ArrowRight size={16} />
             </button>
           </form>
 
           <div className="admin-login-hint">
-            🔒 <strong>Пароль по умолчанию: 12345</strong><br />
-            Вы можете изменить его в любой момент во вкладке «Пароль и вход».
+            🔒 Пароль администратора настроен на сервере и не хранится в браузере.
           </div>
 
           {onExit ? (
@@ -702,7 +685,7 @@ export default function AdminDashboard({ onExit, initialTab = 'overview', onConf
               ← На сайт (вид клиента)
             </Link>
           )}
-          <span>{role === 'developer' ? '⚙️ Режим агентства активен' : '👤 Панель владельца готова к работе'}</span>
+          <span>{role === 'developer' ? '⚙️ Расширенные настройки шаблона' : '👤 Панель владельца готова к работе'}</span>
         </div>
       </aside>
 
@@ -1203,6 +1186,16 @@ export default function AdminDashboard({ onExit, initialTab = 'overview', onConf
                         <Trash2 size={14} />
                       </button>
                     </div>
+                    <details style={{ flex: '1 1 100%', color: '#cbd5e1', fontSize: '12px' }}>
+                      <summary style={{ cursor: 'pointer' }}>Характеристики, фотографии и доставка</summary>
+                      <div className="product-admin-extra">
+                        <label>Тип товара<input value={p.productType || p.category || ''} maxLength={80} onChange={(e) => updateProduct(p.id, { productType: e.target.value })} placeholder="Одежда, электроника…" /></label>
+                        <label>Характеристики (одна строка: название: значение)<textarea value={(p.attributes || []).map((item) => `${item.label}: ${item.value}`).join('\n')} onChange={(e) => updateProduct(p.id, { attributes: e.target.value.split('\n').map((row) => { const split = row.indexOf(':'); return split < 0 ? null : { label: row.slice(0, split).trim(), value: row.slice(split + 1).trim() }; }).filter((item): item is { label: string; value: string } => Boolean(item?.label && item.value)) })} placeholder={'Размер: M, L, XL\nМатериал: хлопок'} rows={4} /></label>
+                        <label>Дополнительные фото — URL, по одному на строку<textarea value={(p.galleryImages || []).join('\n')} onChange={(e) => updateProduct(p.id, { galleryImages: [...new Set(e.target.value.split('\n').map((url) => url.trim()).filter((url) => /^https:\/\//i.test(url)))].slice(0, 12) })} placeholder="https://…" rows={4} /></label>
+                        <label>Вес, кг<input type="number" min="0" max="1000" step="0.1" value={p.weightKg ?? ''} onChange={(e) => updateProduct(p.id, { weightKg: e.target.value ? Number(e.target.value) : undefined })} /></label>
+                        <label>Класс доставки<select value={p.shippingClass || 'standard'} onChange={(e) => updateProduct(p.id, { shippingClass: e.target.value as Product['shippingClass'] })}><option value="standard">Обычный</option><option value="bulky">Крупногабаритный</option><option value="fragile">Хрупкий</option></select></label>
+                      </div>
+                    </details>
                   </div>
                 ))}
               </div>
@@ -1335,7 +1328,7 @@ export default function AdminDashboard({ onExit, initialTab = 'overview', onConf
                         {o.status !== 'cancelled' && (
                           <button
                             type="button"
-                            onClick={() => updateOrderStatus(o.id, 'cancelled')}
+                            onClick={() => { const reason = window.prompt('Причина отказа (можно оставить пустой):'); if (reason !== null) void updateOrderStatus(o.id, 'cancelled', undefined, reason); }}
                             className="admin-secondary"
                             style={{ padding: '6px 12px', fontSize: '12px', color: '#ef4444' }}
                           >
@@ -1684,10 +1677,18 @@ export default function AdminDashboard({ onExit, initialTab = 'overview', onConf
                   <label className="input-label">Бесплатная доставка от суммы (₽):</label>
                   <input
                     type="number"
-                    value={config.freeDeliveryThreshold || 5000}
-                    onChange={(e) => updateField('freeDeliveryThreshold', Number(e.target.value))}
+                    value={config.deliveryPricing?.freeAtSubtotal ?? config.freeDeliveryThreshold ?? 5000}
+                    onChange={(e) => { const value = Number(e.target.value); updateField('freeDeliveryThreshold', value); updateField('deliveryPricing', { ...(config.deliveryPricing || DEFAULT_DELIVERY_PRICING), freeAtSubtotal: value }); }}
                     style={{ width: '100%', height: '44px', background: '#0b0e14', border: '1px solid #262f42', borderRadius: '10px', color: '#fff', padding: '0 12px' }}
                   />
+                </div>
+                <div className="delivery-tiers-editor">
+                  <label>Скидки за количество (порог:скидка, ₽)<textarea value={formatDeliveryTiers((config.deliveryPricing || DEFAULT_DELIVERY_PRICING).countDiscounts)} onChange={(e) => updateField('deliveryPricing', { ...(config.deliveryPricing || DEFAULT_DELIVERY_PRICING), countDiscounts: parseDeliveryTiers(e.target.value) })} rows={3} /></label>
+                  <label>Скидки за сумму товаров (порог:скидка, ₽)<textarea value={formatDeliveryTiers((config.deliveryPricing || DEFAULT_DELIVERY_PRICING).subtotalDiscounts)} onChange={(e) => updateField('deliveryPricing', { ...(config.deliveryPricing || DEFAULT_DELIVERY_PRICING), subtotalDiscounts: parseDeliveryTiers(e.target.value) })} rows={3} /></label>
+                  <label>Надбавка за вес, ₽/кг<input type="number" min="0" value={(config.deliveryPricing || DEFAULT_DELIVERY_PRICING).weightRatePerKg} onChange={(e) => updateField('deliveryPricing', { ...(config.deliveryPricing || DEFAULT_DELIVERY_PRICING), weightRatePerKg: Math.max(0, Number(e.target.value)) })} /></label>
+                  <label>Надбавка за крупный товар, ₽<input type="number" min="0" value={(config.deliveryPricing || DEFAULT_DELIVERY_PRICING).classSurcharges.bulky || 0} onChange={(e) => { const current = config.deliveryPricing || DEFAULT_DELIVERY_PRICING; updateField('deliveryPricing', { ...current, classSurcharges: { ...current.classSurcharges, bulky: Math.max(0, Number(e.target.value)) } }); }} /></label>
+                  <label>Надбавка за хрупкий товар, ₽<input type="number" min="0" value={(config.deliveryPricing || DEFAULT_DELIVERY_PRICING).classSurcharges.fragile || 0} onChange={(e) => { const current = config.deliveryPricing || DEFAULT_DELIVERY_PRICING; updateField('deliveryPricing', { ...current, classSurcharges: { ...current.classSurcharges, fragile: Math.max(0, Number(e.target.value)) } }); }} /></label>
+                  <div className="delivery-tier-hint">Пример: 3:75 означает скидку 75 ₽ при 3 товарах. Доставка бесплатна от заданной выше суммы.</div>
                 </div>
               </div>
             </div>
@@ -1886,7 +1887,7 @@ export default function AdminDashboard({ onExit, initialTab = 'overview', onConf
                 <div>
                   <h2 style={{ margin: 0 }}>Пароль и безопасность панели</h2>
                   <p style={{ margin: 0, color: '#8e9bb5', fontSize: '13px' }}>
-                    Смена пароля доступа к панели управления магазином
+                    Настройки входа хранятся в переменных окружения сервера.
                   </p>
                 </div>
               </div>
@@ -1895,49 +1896,12 @@ export default function AdminDashboard({ onExit, initialTab = 'overview', onConf
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '18px', padding: '12px 16px', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: '10px', color: '#34d399', fontSize: '13px' }}>
                   <KeyRound size={18} />
                   <span>
-                    Панель защищена: пароль <strong>{config.adminPassword ? 'изменен владельцем' : 'по умолчанию: 12345'}</strong>
+                    Пароль сравнивается с bcrypt-хешем. Сессия подписана сервером и хранится в HttpOnly cookie.
                   </span>
                 </div>
 
-                <form onSubmit={handleChangePassword}>
-                  <div style={{ marginBottom: '16px' }}>
-                    <label className="input-label" style={{ marginBottom: '6px', display: 'block' }}>
-                      Новый пароль администратора:
-                    </label>
-                    <input
-                      type="password"
-                      placeholder="Введите новый пароль..."
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                      style={{ width: '100%', height: '44px', background: '#141822', border: '1px solid #262f42', borderRadius: '10px', color: '#fff', padding: '0 14px', boxSizing: 'border-box' }}
-                    />
-                  </div>
-
-                  <div style={{ marginBottom: '20px' }}>
-                    <label className="input-label" style={{ marginBottom: '6px', display: 'block' }}>
-                      Повторите новый пароль:
-                    </label>
-                    <input
-                      type="password"
-                      placeholder="Повторите новый пароль..."
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      style={{ width: '100%', height: '44px', background: '#141822', border: '1px solid #262f42', borderRadius: '10px', color: '#fff', padding: '0 14px', boxSizing: 'border-box' }}
-                    />
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={saving}
-                    className="admin-primary"
-                    style={{ width: '100%', height: '44px', justifyContent: 'center' }}
-                  >
-                    <Save size={16} /> Сохранить и обновить пароль
-                  </button>
-                </form>
-
                 <div style={{ marginTop: '16px', fontSize: '12px', color: '#8e9bb5', lineHeight: 1.5, background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '10px', border: '1px solid #1c2230' }}>
-                  💡 <strong>Важно:</strong> Вы можете в любой момент изменить пароль прямо здесь. После сохранения пароль сразу вступает в силу.
+                  ⚠️ Для запуска задайте <code>AUTH_SECRET</code> и <code>ADMIN_PASSWORD_HASH</code>. После трёх ошибок вход блокируется на час.
                 </div>
               </div>
             </div>

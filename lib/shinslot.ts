@@ -23,6 +23,14 @@ export type ThemeKey =
   | 'cyan'
   | 'custom';
 
+export const DEFAULT_DELIVERY_PRICING: NonNullable<Config['deliveryPricing']> = {
+  freeAtSubtotal: 5000,
+  countDiscounts: [{ from: 3, amount: 75 }, { from: 5, amount: 150 }, { from: 8, amount: 250 }],
+  subtotalDiscounts: [{ from: 5000, amount: 50 }, { from: 10000, amount: 125 }, { from: 20000, amount: 200 }],
+  classSurcharges: { standard: 0, bulky: 250, fragile: 120 },
+  weightRatePerKg: 15,
+};
+
 export type SiteMode = 'services' | 'shop' | 'hybrid';
 export type AdminMode = 'client' | 'developer';
 
@@ -49,6 +57,12 @@ export type Product = {
   badge?: string; // 'Хит' | 'Новинка' | '-20%' | 'Скидка' | 'В наличии'
   inStock: boolean;
   enabled: boolean;
+  /** Extensible, product-specific details shown on the product page. */
+  productType?: string;
+  attributes?: Array<{ label: string; value: string }>;
+  galleryImages?: string[];
+  weightKg?: number;
+  shippingClass?: 'standard' | 'bulky' | 'fragile';
 };
 
 export type PaymentMethodsConfig = {
@@ -68,7 +82,6 @@ export type Config = {
   // Business Model & Admin Mode
   siteMode: SiteMode; // 'services' | 'shop' | 'hybrid'
   adminMode: AdminMode; // 'client' hides niche preset picker; 'developer' shows everything
-  adminPassword?: string; // Default '12345'
   lockNiche?: boolean; // When true, client cannot switch niche
   
   // Brand & Visuals
@@ -105,6 +118,13 @@ export type Config = {
   products: Product[];
   deliveryCost: number;
   freeDeliveryThreshold?: number;
+  deliveryPricing?: {
+    freeAtSubtotal: number;
+    countDiscounts: Array<{ from: number; amount: number }>;
+    subtotalDiscounts: Array<{ from: number; amount: number }>;
+    classSurcharges: Partial<Record<'standard' | 'bulky' | 'fragile', number>>;
+    weightRatePerKg: number;
+  };
   currency: string;
   paymentMethods: PaymentMethodsConfig;
   cartEnabled: boolean;
@@ -136,6 +156,13 @@ export type Order = {
   customerEmail?: string;
   deliveryType: 'pickup' | 'delivery';
   deliveryAddress?: string;
+  deliveryLatitude?: number;
+  deliveryLongitude?: number;
+  deliveryCost?: number;
+  subtotal?: number;
+  discount?: number;
+  rejectionReason?: string;
+  customerAccessToken?: string;
   paymentMethod: 'online' | 'cash' | 'transfer';
   paymentStatus: 'paid' | 'pending';
   status: 'new' | 'processing' | 'completed' | 'cancelled';
@@ -147,7 +174,6 @@ export const presets: Record<PresetKey, Config> = {
   shop: {
     siteMode: 'shop',
     adminMode: 'client',
-    adminPassword: '12345',
     lockNiche: false,
     niche: 'shop',
     nicheLabel: 'Интернет-магазин и Витрина товаров',
@@ -174,6 +200,7 @@ export const presets: Record<PresetKey, Config> = {
     services: [],
     deliveryCost: 350,
     freeDeliveryThreshold: 5000,
+    deliveryPricing: DEFAULT_DELIVERY_PRICING,
     currency: '₽',
     cartEnabled: true,
     paymentMethods: {
