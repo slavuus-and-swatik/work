@@ -6,11 +6,12 @@ export async function GET(request: Request) {
   if (draft && !(await admin(request))) return json({ error: 'Требуется вход в админку' }, 403);
   const isAdmin = Boolean(await admin(request));
   const current = await config(!draft);
+  const publishedConfig = draft ? await config(true) : current;
   const safeConfig = isAdmin ? current : {
     ...current,
     paymentMethods: { ...current.paymentMethods, yookassaSecretKey: undefined, tbankTerminalKey: undefined },
   };
-  return json({ config: safeConfig, isAdmin });
+  return json({ config: safeConfig, isAdmin, activePresetKey: publishedConfig.niche });
 }
 
 export async function PUT(request: Request) {
@@ -22,8 +23,9 @@ export async function PUT(request: Request) {
     return json({ error: 'Проверьте настройки' }, 400);
   }
   const productIds = new Set<string>();
+  const validTextList = (value: unknown) => Array.isArray(value) && value.length <= 30 && value.every((line) => typeof line === 'string' && line.trim().length > 0 && line.length <= 500);
   for (const product of c.products) {
-    if (!product || typeof product.id !== 'string' || !/^[\w-]{1,80}$/.test(product.id) || productIds.has(product.id) || typeof product.name !== 'string' || product.name.trim().length < 1 || product.name.length > 180 || typeof product.description !== 'string' || product.description.length > 10000 || !Number.isFinite(product.price) || product.price < 0 || product.price > 1_000_000_000 || typeof product.enabled !== 'boolean' || typeof product.inStock !== 'boolean' || !Array.isArray(product.galleryImages || []) || (product.galleryImages || []).length > 12 || !Array.isArray(product.attributes || []) || (product.attributes || []).length > 100 || (product.productType !== undefined && (typeof product.productType !== 'string' || product.productType.length > 80)) || (product.shippingClass !== undefined && !['standard', 'bulky', 'fragile'].includes(product.shippingClass))) {
+    if (!product || typeof product.id !== 'string' || !/^[\w-]{1,80}$/.test(product.id) || productIds.has(product.id) || typeof product.name !== 'string' || product.name.trim().length < 1 || product.name.length > 180 || typeof product.description !== 'string' || product.description.length > 10000 || !Number.isFinite(product.price) || product.price < 0 || product.price > 1_000_000_000 || typeof product.enabled !== 'boolean' || typeof product.inStock !== 'boolean' || !Array.isArray(product.galleryImages || []) || (product.galleryImages || []).length > 12 || !Array.isArray(product.attributes || []) || (product.attributes || []).length > 100 || (product.productType !== undefined && (typeof product.productType !== 'string' || product.productType.length > 80)) || (product.stockQuantity !== undefined && (!Number.isSafeInteger(product.stockQuantity) || product.stockQuantity < 0 || product.stockQuantity > 1_000_000)) || (product.popularity !== undefined && (!Number.isFinite(product.popularity) || product.popularity < 0 || product.popularity > 1_000_000_000)) || (product.createdAt !== undefined && (typeof product.createdAt !== 'string' || product.createdAt.length > 40 || Number.isNaN(Date.parse(product.createdAt)))) || (product.details !== undefined && (!product.details || !validTextList(product.details.advantages || []) || !validTextList(product.details.included || []) || ['warranty', 'delivery', 'returns'].some((key) => product.details?.[key as 'warranty' | 'delivery' | 'returns'] !== undefined && (typeof product.details[key as 'warranty' | 'delivery' | 'returns'] !== 'string' || product.details[key as 'warranty' | 'delivery' | 'returns']!.length > 500)))) || (product.shippingClass !== undefined && !['standard', 'bulky', 'fragile'].includes(product.shippingClass))) {
       return json({ error: 'Проверьте название, цену и характеристики товаров' }, 400);
     }
     productIds.add(product.id);

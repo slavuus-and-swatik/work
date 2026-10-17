@@ -27,6 +27,7 @@ import {
   type Config,
   type Service,
 } from '@/lib/shinslot';
+import { normalizeRussianPhone } from '@/lib/commerce';
 
 type Slot = { time: string; free: number };
 type MyBooking = {
@@ -619,9 +620,10 @@ function BookingFlow() {
                 <input
                   value={name}
                   onChange={(e) => {
-                    setName(e.target.value);
+                    setName(e.target.value.replace(/[^\p{L} -]/gu, '').slice(0, 80));
                     setError('');
                   }}
+                  onBeforeInput={(e) => { const text = (e.nativeEvent as InputEvent).data; if (text && /[^\p{L} -]/u.test(text)) e.preventDefault(); }}
                   placeholder="Иван"
                   autoComplete="name"
                 />
@@ -632,9 +634,14 @@ function BookingFlow() {
                 <input
                   value={phone}
                   onChange={(e) => {
-                    setPhone(e.target.value);
+                    setPhone(e.target.value.replace(/\D/g, '').slice(0, 11));
                     setError('');
                   }}
+                  onBeforeInput={(e) => { const text = (e.nativeEvent as InputEvent).data; if (text && /\D/.test(text)) e.preventDefault(); }}
+                  onPaste={(e) => { e.preventDefault(); setPhone((current) => `${current}${e.clipboardData.getData('text').replace(/\D/g, '')}`.slice(0, 11)); }}
+                  onDrop={(e) => e.preventDefault()}
+                  inputMode="numeric"
+                  maxLength={11}
                   placeholder="+7 (999) 000-00-00"
                   type="tel"
                   autoComplete="tel"
@@ -652,9 +659,8 @@ function BookingFlow() {
                     setError('Пожалуйста, укажите ваше имя (минимум 2 буквы)');
                     return;
                   }
-                  const digits = phone.replace(/\D/g, '');
-                  if (digits.length < 10) {
-                    setError('Пожалуйста, укажите корректный номер телефона (от 10 цифр)');
+                  if (!normalizeRussianPhone(phone)) {
+                    setError('Укажите российский номер из 10 цифр или 11 цифр с началом 7 или 8');
                     return;
                   }
                   submit();
