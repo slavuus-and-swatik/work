@@ -20,6 +20,7 @@ export async function POST(request: Request) {
   const date = String(b.date || '');
   const time = String(b.time || '');
   const size = b.wheelSize ? Number(b.wheelSize) : 0;
+  const hasWheelSize = b.wheelSize !== undefined && b.wheelSize !== null && String(b.wheelSize) !== '';
   const name = String(b.name || '').trim();
   const phone = normalizeRussianPhone(String(b.phone || ''));
   const vehicleType = String(b.vehicleType || '');
@@ -28,6 +29,7 @@ export async function POST(request: Request) {
     !service ||
     !validDate(date) ||
     !/^\d{2}:\d{2}$/.test(time) ||
+    (hasWheelSize && (!Number.isSafeInteger(size) || size < 10 || size > 30)) ||
     name.length < 2 ||
     name.length > 80 ||
     !/^[\p{L} -]+$/u.test(name) ||
