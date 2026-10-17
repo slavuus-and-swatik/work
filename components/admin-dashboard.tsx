@@ -64,6 +64,12 @@ function parseDeliveryTiers(value: string) {
   return value.split('\n').map((line) => line.split(':').map(Number)).filter(([from, amount]) => Number.isFinite(from) && from > 0 && Number.isFinite(amount) && amount >= 0).map(([from, amount]) => ({ from, amount }));
 }
 
+function isIntegerNumberField(target: EventTarget | null): target is HTMLInputElement {
+  if (!(target instanceof HTMLInputElement) || target.type !== 'number') return false;
+  const step = target.step || '1';
+  return step !== 'any' && Number(step) >= 1;
+}
+
 type Tab =
   | 'overview'
   | 'presets'
@@ -642,7 +648,25 @@ export default function AdminDashboard({ onExit, initialTab = 'overview', onConf
   }
 
   return (
-    <div className="admin">
+    <div
+      className="admin"
+      onKeyDownCapture={(event) => {
+        if (isIntegerNumberField(event.target) && event.key.length === 1 && /\D/.test(event.key) && !event.ctrlKey && !event.metaKey) event.preventDefault();
+      }}
+      onBeforeInputCapture={(event) => {
+        const text = (event.nativeEvent as InputEvent).data;
+        if (isIntegerNumberField(event.target) && text && /\D/.test(text)) event.preventDefault();
+      }}
+      onChangeCapture={(event) => {
+        if (isIntegerNumberField(event.target) && /\D/.test(event.target.value)) event.target.value = event.target.value.replace(/\D/g, '');
+      }}
+      onPasteCapture={(event) => {
+        if (isIntegerNumberField(event.target) && /\D/.test(event.clipboardData.getData('text'))) event.preventDefault();
+      }}
+      onDropCapture={(event) => {
+        if (isIntegerNumberField(event.target)) event.preventDefault();
+      }}
+    >
       {/* Desktop Sidebar */}
       <aside className="admin-sidebar">
         <div className="admin-brand">
