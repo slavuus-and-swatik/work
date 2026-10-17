@@ -508,7 +508,9 @@ export function json(data: unknown, status = 200) {
 }
 
 export function validDate(s: string) {
-  return /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const date = new Date(`${s}T00:00:00.000Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === s;
 }
 
 export function localIso(date: string, time: string) {

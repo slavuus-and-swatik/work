@@ -1,6 +1,8 @@
 import { admin, config, database, json, tenant, tenantSlug } from '@/lib/server';
 import { defaultConfig, type Config } from '@/lib/shinslot';
 import { normalizeRussianPhone } from '@/lib/commerce';
+import { readJson, JsonRequestError } from '@/lib/read-json';
+
 
 export async function GET(request: Request) {
   const draft = new URL(request.url).searchParams.get('draft') === '1';
@@ -18,7 +20,14 @@ export async function GET(request: Request) {
 export async function PUT(request: Request) {
   const id = await admin(request);
   if (!id) return json({ error: 'Требуется вход в админку' }, 403);
-  const body = (await request.json()) as { config?: Config; publish?: boolean };
+  let parsed: unknown;
+  try { parsed = await readJson<unknown>(request, 2 * 1024 * 1024); }
+  catch (error) {
+    if (error instanceof JsonRequestError) return json({ error: error.message }, error.status);
+    return json({ error: 'Некорректный запрос настроек' }, 400);
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return json({ error: 'Некорректный запрос настроек' }, 400);
+  const body = parsed as { config?: Config; publish?: boolean };
   const c = body.config;
   if (!c || typeof c.name !== 'string' || c.name.length > 120 || !Array.isArray(c.services) || c.services.length > 300 || !Array.isArray(c.products) || c.products.length > 500 || !Number.isInteger(c.posts) || c.posts < 1 || c.posts > 20 || !Number.isSafeInteger(c.deliveryCost) || c.deliveryCost < 0 || c.deliveryCost > 1_000_000) {
     return json({ error: 'Проверьте настройки' }, 400);

@@ -1,6 +1,8 @@
 import { admin, config, database, json, localIso, tenantSlug, timeMinutes, validDate } from '@/lib/server';
 import { duration, priceFor } from '@/lib/shinslot';
 import { normalizeRussianPhone } from '@/lib/commerce';
+import { readJson, JsonRequestError } from '@/lib/read-json';
+
 
 export async function GET(request: Request) {
   if (!await admin(request)) return json({ error: 'Нет доступа' }, 403);
@@ -14,7 +16,14 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const b = (await request.json()) as Record<string, unknown>;
+  let parsed: unknown;
+  try { parsed = await readJson<unknown>(request, 16 * 1024); }
+  catch (error) {
+    if (error instanceof JsonRequestError) return json({ error: error.message }, error.status);
+    return json({ error: 'Некорректный запрос записи' }, 400);
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return json({ error: 'Некорректный запрос записи' }, 400);
+  const b = parsed as Record<string, unknown>;
   const c = await config();
   const service = c.services.find((x) => x.id === b.serviceId && x.enabled);
   const date = String(b.date || '');

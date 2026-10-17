@@ -103,21 +103,27 @@ export async function POST(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   if (!await admin(req)) return json({ error: 'Нет доступа' }, 403);
+  let parsed: unknown;
+  try { parsed = await readJson<unknown>(req, 8 * 1024); }
+  catch (error) {
+    if (error instanceof JsonRequestError) return json({ error: error.message }, error.status);
+    return json({ error: 'Некорректный запрос заказа' }, 400);
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return json({ error: 'Некорректный запрос заказа' }, 400);
+  const body = parsed as Record<string, unknown>;
+  const { id, status, paymentStatus, rejectionReason } = body;
+  if (typeof id !== 'string' || !id.trim() || id.length > 100) return json({ error: 'ID заказа обязателен' }, 400);
+  if (typeof status !== 'string' || !['new', 'processing', 'completed', 'cancelled'].includes(status)) return json({ error: 'Недопустимый статус' }, 400);
+  if (paymentStatus !== undefined && paymentStatus !== 'paid' && paymentStatus !== 'pending') return json({ error: 'Недопустимый статус оплаты' }, 400);
+  if (rejectionReason !== undefined && (typeof rejectionReason !== 'string' || rejectionReason.length > 500)) return json({ error: 'Некорректная причина отказа' }, 400);
   try {
-    const body = await req.json();
-    const { id, status, paymentStatus, rejectionReason } = body;
-    if (!id) {
-      return NextResponse.json({ error: 'ID заказа обязателен' }, { status: 400 });
-    }
     const { updateOrderStatus } = await import('@/lib/server');
-    if (!['new', 'processing', 'completed', 'cancelled'].includes(status)) return json({ error: 'Недопустимый статус' }, 400);
-    const ok = await updateOrderStatus(id, status, paymentStatus, rejectionReason);
-    if (!ok) {
-      return NextResponse.json({ error: 'Заказ не найден' }, { status: 404 });
-    }
+    const ok = await updateOrderStatus(id, status, paymentStatus as string | undefined, rejectionReason as string | undefined);
+    if (!ok) return NextResponse.json({ error: 'Заказ не найден' }, { status: 404 });
     if (status === 'cancelled') {
       try {
-        await sendAdminTelegramAlert('\u0417\u0430\u043a\u0430\u0437 #' + id + ' \u043e\u0442\u043a\u043b\u043e\u043d\u0451\u043d.\n\u041f\u0440\u0438\u0447\u0438\u043d\u0430: ' + (typeof rejectionReason === 'string' && rejectionReason.trim() ? rejectionReason.trim().slice(0, 500) : '\u043d\u0435 \u0443\u043a\u0430\u0437\u0430\u043d\u0430') + '\n\u0412\u0440\u0435\u043c\u044f: ' + new Date().toISOString());
+        const reason = typeof rejectionReason === 'string' && rejectionReason.trim() ? rejectionReason.trim() : 'не указана';
+        await sendAdminTelegramAlert('Заказ #' + id + ' отклонён.\nПричина: ' + reason + '\nВремя: ' + new Date().toISOString());
       } catch {
         console.warn('[admin-notifications] Failed to send order rejection alert');
       }
