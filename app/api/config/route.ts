@@ -1,5 +1,6 @@
 import { admin, config, database, json, tenant, tenantSlug } from '@/lib/server';
 import { defaultConfig, type Config } from '@/lib/shinslot';
+import { normalizeRussianPhone } from '@/lib/commerce';
 
 export async function GET(request: Request) {
   const draft = new URL(request.url).searchParams.get('draft') === '1';
@@ -41,6 +42,9 @@ export async function PUT(request: Request) {
   }
   if (c.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c.email)) {
     return json({ error: 'Проверьте адрес почты' }, 400);
+  }
+  if (!normalizeRussianPhone(c.phone) || (c.whatsapp && !normalizeRussianPhone(c.whatsapp)) || (c.paymentMethods?.sbpPhone && !normalizeRussianPhone(c.paymentMethods.sbpPhone))) {
+    return json({ error: 'Проверьте российский номер телефона: нужно 10 или 11 цифр' }, 400);
   }
   const now = new Date().toISOString();
   const row = await tenant();

@@ -1656,7 +1656,12 @@ export default function AdminDashboard({ onExit, initialTab = 'overview', onConf
                   <input
                     type="text"
                     value={config.phone}
-                    onChange={(e) => updateField('phone', e.target.value)}
+                    inputMode="numeric"
+                    maxLength={11}
+                    onChange={(e) => updateField('phone', e.target.value.replace(/\D/g, '').slice(0, 11))}
+                    onBeforeInput={(e) => { const text = (e.nativeEvent as InputEvent).data; if (text && /\D/.test(text)) e.preventDefault(); }}
+                    onPaste={(e) => { e.preventDefault(); updateField('phone', e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 11)); }}
+                    onDrop={(e) => e.preventDefault()}
                     style={{ width: '100%', height: '44px', background: '#0b0e14', border: '1px solid #262f42', borderRadius: '10px', color: '#fff', padding: '0 12px' }}
                   />
                 </div>
@@ -1688,7 +1693,12 @@ export default function AdminDashboard({ onExit, initialTab = 'overview', onConf
                     type="text"
                     value={config.whatsapp || ''}
                     placeholder="+79990001122"
-                    onChange={(e) => updateField('whatsapp', e.target.value)}
+                    inputMode="numeric"
+                    maxLength={11}
+                    onChange={(e) => updateField('whatsapp', e.target.value.replace(/\D/g, '').slice(0, 11))}
+                    onBeforeInput={(e) => { const text = (e.nativeEvent as InputEvent).data; if (text && /\D/.test(text)) e.preventDefault(); }}
+                    onPaste={(e) => { e.preventDefault(); updateField('whatsapp', e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 11)); }}
+                    onDrop={(e) => e.preventDefault()}
                     style={{ width: '100%', height: '44px', background: '#0b0e14', border: '1px solid #262f42', borderRadius: '10px', color: '#fff', padding: '0 12px' }}
                   />
                 </div>
@@ -1827,12 +1837,17 @@ export default function AdminDashboard({ onExit, initialTab = 'overview', onConf
                           type="text"
                           placeholder="+7 (999) 000-00-00"
                           value={config.paymentMethods?.sbpPhone || config.phone || ''}
+                          inputMode="numeric"
+                          maxLength={11}
                           onChange={(e) =>
                             updateField('paymentMethods', {
                               ...(config.paymentMethods || { onlineCard: true, sbpOnline: true, cashOnDelivery: true, cardTransfer: true }),
-                              sbpPhone: e.target.value,
+                              sbpPhone: e.target.value.replace(/\D/g, '').slice(0, 11),
                             })
                           }
+                          onBeforeInput={(e) => { const text = (e.nativeEvent as InputEvent).data; if (text && /\D/.test(text)) e.preventDefault(); }}
+                          onPaste={(e) => { e.preventDefault(); updateField('paymentMethods', { ...(config.paymentMethods || { onlineCard: true, sbpOnline: true, cashOnDelivery: true, cardTransfer: true }), sbpPhone: e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 11) }); }}
+                          onDrop={(e) => e.preventDefault()}
                           style={{ width: '100%', height: '38px', background: '#141822', border: '1px solid #262f42', borderRadius: '8px', color: '#fff', padding: '0 10px', fontSize: '13px', boxSizing: 'border-box' }}
                         />
                       </div>

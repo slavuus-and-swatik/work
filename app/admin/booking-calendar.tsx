@@ -168,11 +168,11 @@ export default function BookingCalendar({
               </label>
               <label>
                 Имя
-                <input value={name} onChange={(e) => setName(e.target.value)} />
+                <input value={name} onChange={(e) => setName(e.target.value.replace(/[^\p{L} -]/gu, '').slice(0, 80))} onBeforeInput={(e) => { const text = (e.nativeEvent as InputEvent).data; if (text && /[^\p{L} -]/u.test(text)) e.preventDefault(); }} onDrop={(e) => e.preventDefault()} />
               </label>
               <label>
                 Телефон
-                <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
+                <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 11))} onBeforeInput={(e) => { const text = (e.nativeEvent as InputEvent).data; if (text && /\D/.test(text)) e.preventDefault(); }} onPaste={(e) => { e.preventDefault(); setPhone((value) => `${value}${e.clipboardData.getData('text').replace(/\D/g, '')}`.slice(0, 11)); }} onDrop={(e) => e.preventDefault()} inputMode="numeric" maxLength={11} />
               </label>
             </div>
             {error && <p className="error">{error}</p>}
