@@ -30,6 +30,7 @@ export function calculateOrder(config: Config, lines: CartLineInput[], promoCode
   const items = [...aggregated].map(([id, quantity]) => {
     const product = products.get(id);
     if (!product) throw new Error('Один из товаров больше недоступен');
+    if (product.stockQuantity !== undefined && (!Number.isSafeInteger(product.stockQuantity) || product.stockQuantity < 0 || quantity > product.stockQuantity)) throw new Error(`Недостаточно товара «${product.name}» на складе`);
     return { product, quantity };
   });
   const subtotal = items.reduce((sum, { product, quantity }) => sum + product.price * quantity, 0);

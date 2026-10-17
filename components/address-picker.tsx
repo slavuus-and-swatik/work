@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { CircleMarker, MapContainer, TileLayer, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
+import { Spinner } from '@/components/ui/spinner';
 
 type Point = { lat: number; lng: number };
 function PointPicker({ value, onPick }: { value: Point | null; onPick: (point: Point) => void }) {
@@ -39,7 +40,7 @@ export default function AddressPicker({ onClose, onSelect, initialPoint }: { onC
         <PointPicker value={point} onPick={setPoint} />
       </MapContainer>
       {error && <p role="alert" className="address-picker-error">{error}</p>}
-      <footer><span>{point ? `${point.lat.toFixed(5)}, ${point.lng.toFixed(5)}` : 'Точка не выбрана'}</span><button type="button" disabled={loading || !point} onClick={confirm}>{loading ? 'Определяем адрес…' : 'Подставить адрес'}</button></footer>
+      <footer><span>{point ? `${point.lat.toFixed(5)}, ${point.lng.toFixed(5)}` : 'Точка не выбрана'}</span><button type="button" disabled={loading || !point} onClick={confirm}>{loading ? <><Spinner /> Определяем адрес…</> : 'Подставить адрес'}</button></footer>
       <small>Адрес определяется сервисом OpenStreetMap Nominatim. Карта: © OpenStreetMap contributors. Результат можно поправить вручную.</small>
     </section>
   </div>;

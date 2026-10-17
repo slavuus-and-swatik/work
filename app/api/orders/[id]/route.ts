@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { updateOrderStatus, admin, getOrders, json } from '@/lib/server';
+import { sendAdminTelegramAlert } from '@/lib/notifications';
 
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
@@ -22,6 +23,13 @@ export async function PATCH(
     const ok = await updateOrderStatus(id, status, paymentStatus, rejectionReason);
     if (!ok) {
       return NextResponse.json({ error: 'Заказ не найден' }, { status: 404 });
+    }
+    if (status === 'cancelled') {
+      try {
+        await sendAdminTelegramAlert('\u0417\u0430\u043a\u0430\u0437 #' + id + ' \u043e\u0442\u043a\u043b\u043e\u043d\u0451\u043d.\n\u041f\u0440\u0438\u0447\u0438\u043d\u0430: ' + (typeof rejectionReason === 'string' && rejectionReason.trim() ? rejectionReason.trim().slice(0, 500) : '\u043d\u0435 \u0443\u043a\u0430\u0437\u0430\u043d\u0430') + '\n\u0412\u0440\u0435\u043c\u044f: ' + new Date().toISOString());
+      } catch {
+        console.warn('[admin-notifications] Failed to send order rejection alert');
+      }
     }
     return NextResponse.json({ success: true });
   } catch {

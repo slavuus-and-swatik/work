@@ -1,6 +1,7 @@
 import { DEFAULT_DELIVERY_PRICING, type Config } from './shinslot';
 import { getActiveConfig } from './site-config';
 import { isTrustedAdmin } from './admin-auth';
+import { ensurePostgresSchema, getPostgresPool, postgresDatabase } from './postgres';
 
 export const tenantSlug = 'demo';
 
@@ -169,12 +170,26 @@ if (!globalState.__shinslot_bucket) {
 export const bucket = {
   async put(key: string, value: ArrayBuffer | Uint8Array, options?: { httpMetadata?: { contentType?: string } }) {
     const bytes = value instanceof Uint8Array ? value : new Uint8Array(value);
+    const pool = getPostgresPool();
+    if (pool) {
+      await ensurePostgresSchema();
+      await pool.query('INSERT INTO media_objects (object_key,body,content_type,updated_at) VALUES ($1,$2,$3,$4) ON CONFLICT (object_key) DO UPDATE SET body=EXCLUDED.body,content_type=EXCLUDED.content_type,updated_at=EXCLUDED.updated_at', [key, Buffer.from(bytes), options?.httpMetadata?.contentType || 'image/jpeg', new Date().toISOString()]);
+      return;
+    }
     globalState.__shinslot_bucket!.set(key, {
       body: bytes,
       contentType: options?.httpMetadata?.contentType || 'image/jpeg',
     });
   },
   async get(key: string) {
+    const pool = getPostgresPool();
+    if (pool) {
+      await ensurePostgresSchema();
+      const result = await pool.query<{ body: Buffer; content_type: string }>('SELECT body,content_type FROM media_objects WHERE object_key=$1', [key]);
+      const item = result.rows[0];
+      if (!item) return null;
+      return { body: new Uint8Array(item.body), httpMetadata: { contentType: item.content_type } };
+    }
     const item = globalState.__shinslot_bucket!.get(key);
     if (!item) return null;
     return {
@@ -185,6 +200,8 @@ export const bucket = {
 };
 
 export function database() {
+  const postgres = postgresDatabase();
+  if (postgres) return postgres;
   const tenants = globalState.__shinslot_tenants!;
   const bookings = globalState.__shinslot_bookings!;
 
@@ -396,14 +413,39 @@ export async function tenant() {
     .prepare('SELECT * FROM tenants WHERE slug = ?')
     .bind(tenantSlug)
     .first<TenantRow>();
+  if (!row && getPostgresPool()) {
+    const initial = getActiveConfig();
+    await ensurePostgresSchema();
+    await database().prepare('INSERT INTO tenants (slug,owner_id,draft,published,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(slug) DO NOTHING')
+      .bind(tenantSlug, 'demo-admin', JSON.stringify(initial), JSON.stringify(initial), new Date().toISOString()).run();
+    return database().prepare('SELECT * FROM tenants WHERE slug = ?').bind(tenantSlug).first<TenantRow>();
+  }
   return row;
 }
 
 /** A metadata-only view for platform operators; never includes customer records or secrets. */
-export function platformOverview() {
-  const tenants = [...globalState.__shinslot_tenants!.values()];
-  const bookings = globalState.__shinslot_bookings!;
-  const orders = globalState.__shinslot_orders!;
+export async function platformOverview() {
+  const pool = getPostgresPool();
+  let tenants: TenantRow[];
+  let bookingCounts = new Map<string, number>();
+  let orderCounts = new Map<string, number>();
+  let storage = 'in-memory-demo';
+  if (pool) {
+    await ensurePostgresSchema();
+    const [tenantResult, bookingResult, orderResult] = await Promise.all([
+      pool.query<TenantRow>('SELECT * FROM tenants ORDER BY slug'),
+      pool.query<{ tenant_slug: string; count: string }>('SELECT tenant_slug,COUNT(*)::text AS count FROM bookings GROUP BY tenant_slug'),
+      pool.query<{ tenant_slug: string; count: string }>('SELECT tenant_slug,COUNT(*)::text AS count FROM orders GROUP BY tenant_slug'),
+    ]);
+    tenants = tenantResult.rows;
+    bookingCounts = new Map(bookingResult.rows.map((row) => [row.tenant_slug, Number(row.count)]));
+    orderCounts = new Map(orderResult.rows.map((row) => [row.tenant_slug, Number(row.count)]));
+    storage = 'postgresql';
+  } else {
+    tenants = [...globalState.__shinslot_tenants!.values()];
+    for (const booking of globalState.__shinslot_bookings!) bookingCounts.set(booking.tenant_slug, (bookingCounts.get(booking.tenant_slug) || 0) + 1);
+    for (const order of globalState.__shinslot_orders!) orderCounts.set(order.tenant_slug, (orderCounts.get(order.tenant_slug) || 0) + 1);
+  }
   const companies = tenants.map((row) => {
     let published: Config = getActiveConfig();
     try { published = { ...published, ...JSON.parse(row.published) as Partial<Config> }; } catch { /* report incomplete config below */ }
@@ -419,18 +461,18 @@ export function platformOverview() {
       updatedAt: row.updated_at,
       hasDraftChanges: Boolean(draft && JSON.stringify(draft) !== row.published),
       configurationComplete: complete,
-      bookings: bookings.filter((item) => item.tenant_slug === row.slug).length,
-      orders: orders.filter((item) => item.tenant_slug === row.slug).length,
+      bookings: bookingCounts.get(row.slug) || 0,
+      orders: orderCounts.get(row.slug) || 0,
     };
   });
   return {
-    storage: 'in-memory-demo',
+    storage,
     uptimeSeconds: Math.floor(process.uptime()),
     companies,
     totals: {
       companies: companies.length,
-      bookings: bookings.length,
-      orders: orders.length,
+      bookings: [...bookingCounts.values()].reduce((sum, count) => sum + count, 0),
+      orders: [...orderCounts.values()].reduce((sum, count) => sum + count, 0),
     },
   };
 }
@@ -483,6 +525,12 @@ export function minutesTime(n: number) {
 }
 
 export async function getOrders(): Promise<OrderRow[]> {
+  const pool = getPostgresPool();
+  if (pool) {
+    await ensurePostgresSchema();
+    const result = await pool.query<OrderRow>('SELECT * FROM orders WHERE tenant_slug=$1 ORDER BY created_at DESC LIMIT 1000', [tenantSlug]);
+    return result.rows;
+  }
   const list = globalState.__shinslot_orders || [];
   return [...list].sort((a, b) => b.created_at.localeCompare(a.created_at));
 }
@@ -532,11 +580,31 @@ export async function createOrder(data: {
     created_at: new Date().toISOString(),
   };
 
+  const pool = getPostgresPool();
+  if (pool) {
+    await ensurePostgresSchema();
+    await pool.query(
+      'INSERT INTO orders (id,tenant_slug,items_json,total,customer_name,customer_phone,customer_email,delivery_type,delivery_address,delivery_latitude,delivery_longitude,subtotal,discount,delivery_cost,customer_access_token,payment_method,payment_status,status,comment,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)',
+      [row.id,row.tenant_slug,row.items_json,row.total,row.customer_name,row.customer_phone,row.customer_email,row.delivery_type,row.delivery_address,row.delivery_latitude,row.delivery_longitude,row.subtotal,row.discount,row.delivery_cost,row.customer_access_token,row.payment_method,row.payment_status,row.status,row.comment,row.created_at],
+    );
+    return row;
+  }
   globalState.__shinslot_orders.unshift(row);
   return row;
 }
 
 export async function updateOrderStatus(id: string, status: string, paymentStatus?: string, rejectionReason?: string): Promise<boolean> {
+  const pool = getPostgresPool();
+  if (pool) {
+    await ensurePostgresSchema();
+    const result = await pool.query(
+      `UPDATE orders SET status=$1,payment_status=COALESCE($2,payment_status),
+       rejection_reason=CASE WHEN $1='cancelled' THEN NULLIF(LEFT(COALESCE($3,''),500),'') ELSE rejection_reason END
+       WHERE id=$4 AND tenant_slug=$5`,
+      [status, paymentStatus || null, rejectionReason?.trim() || null, id, tenantSlug],
+    );
+    return (result.rowCount || 0) > 0;
+  }
   const list = globalState.__shinslot_orders || [];
   const order = list.find((o) => o.id === id);
   if (!order) return false;

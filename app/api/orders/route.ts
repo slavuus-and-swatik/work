@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getOrders, createOrder, admin, json, config } from '@/lib/server';
 import { readJson, JsonRequestError } from '@/lib/read-json';
+import { sendAdminTelegramAlert } from '@/lib/notifications';
 
 export async function GET(request: Request) {
   if (!await admin(request)) return json({ error: 'Нет доступа' }, 403);
@@ -46,7 +47,7 @@ export async function POST(req: NextRequest) {
     const c = await config();
     const name = typeof body.customerName === 'string' ? body.customerName.trim() : '';
     const phone = normalizeRussianPhone(typeof body.customerPhone === 'string' ? body.customerPhone : '');
-    if (name.length < 2 || name.length > 100 || !phone || !Array.isArray(body.items) || !body.items.length) {
+    if (name.length < 2 || name.length > 100 || !/^[\p{L} -]+$/u.test(name) || !phone || !Array.isArray(body.items) || !body.items.length) {
       return NextResponse.json(
         { error: !phone ? 'Укажите российский номер телефона из 10 или 11 цифр' : 'Проверьте имя и состав заказа' },
         { status: 400 }
@@ -113,6 +114,13 @@ export async function PATCH(req: NextRequest) {
     const ok = await updateOrderStatus(id, status, paymentStatus, rejectionReason);
     if (!ok) {
       return NextResponse.json({ error: 'Заказ не найден' }, { status: 404 });
+    }
+    if (status === 'cancelled') {
+      try {
+        await sendAdminTelegramAlert('\u0417\u0430\u043a\u0430\u0437 #' + id + ' \u043e\u0442\u043a\u043b\u043e\u043d\u0451\u043d.\n\u041f\u0440\u0438\u0447\u0438\u043d\u0430: ' + (typeof rejectionReason === 'string' && rejectionReason.trim() ? rejectionReason.trim().slice(0, 500) : '\u043d\u0435 \u0443\u043a\u0430\u0437\u0430\u043d\u0430') + '\n\u0412\u0440\u0435\u043c\u044f: ' + new Date().toISOString());
+      } catch {
+        console.warn('[admin-notifications] Failed to send order rejection alert');
+      }
     }
     return NextResponse.json({ success: true });
   } catch {

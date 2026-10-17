@@ -61,6 +61,16 @@ export type Product = {
   productType?: string;
   attributes?: Array<{ label: string; value: string }>;
   galleryImages?: string[];
+  stockQuantity?: number;
+  popularity?: number;
+  createdAt?: string;
+  details?: {
+    advantages?: string[];
+    included?: string[];
+    warranty?: string;
+    delivery?: string;
+    returns?: string;
+  };
   weightKg?: number;
   shippingClass?: 'standard' | 'bulky' | 'fragile';
 };
