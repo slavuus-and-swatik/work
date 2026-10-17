@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
+import { Toaster } from '@/components/ui/sonner';
 
 export const viewport: Viewport = {
   themeColor: '#0b0e14',
@@ -37,7 +38,7 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
       </head>
-      <body>{children}</body>
+      <body>{children}<Toaster /></body>
     </html>
   );
 }

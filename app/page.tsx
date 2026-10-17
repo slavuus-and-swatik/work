@@ -39,6 +39,9 @@ import {
 import { PWAInstallButton } from '@/components/pwa-install-button';
 import { ScrollReveal } from '@/components/scroll-reveal';
 import { calculateOrder, normalizeRussianPhone } from '@/lib/commerce';
+import { CART_UPDATED_EVENT, readStoredCart, writeStoredCart } from '@/lib/cart-client';
+import { CartQuantityControl } from '@/components/cart-quantity-control';
+import { toast } from 'sonner';
 
 const AddressPicker = dynamic(() => import('@/components/address-picker'), { ssr: false });
 
@@ -57,7 +60,18 @@ type MyBooking = {
 };
 
 const bookingStorageKey = 'shinslot-my-booking';
-const cartStorageKey = 'shinslot-cart-items';
+const favoritesStorageKey = 'shinslot-favorite-ids';
+
+function formatRussianPhone(value: string) {
+  let digits = value.replace(/\D/g, '');
+  if (digits.length === 11 && (digits.startsWith('7') || digits.startsWith('8'))) digits = digits.slice(1);
+  if (!digits) return '';
+  const area = digits.slice(0, 3);
+  const first = digits.slice(3, 6);
+  const second = digits.slice(6, 8);
+  const third = digits.slice(8, 10);
+  return `+7${area ? ` (${area}` : ''}${area.length === 3 ? ')' : ''}${first ? ` ${first}` : ''}${second ? `-${second}` : ''}${third ? `-${third}` : ''}${digits.length > 10 ? ` ${digits.slice(10)}` : ''}`;
+}
 
 function serviceIcon(name?: string) {
   switch (name) {
@@ -86,17 +100,14 @@ export default function Home() {
   const [activeNav, setActiveNav] = useState('top');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [sortMode, setSortMode] = useState<'popular' | 'newest' | 'price-asc' | 'price-desc'>('popular');
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
+  const [configLoading, setConfigLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'products' | 'services'>('products');
 
   // Shopping Cart state
-  const [cart, setCart] = useState<CartItem[]>(() => {
-    if (typeof window === 'undefined') return [];
-    try {
-      const saved = JSON.parse(localStorage.getItem(cartStorageKey) || '[]');
-      if (Array.isArray(saved)) return saved;
-    } catch {}
-    return [];
-  });
+  const [cart, setCart] = useState<CartItem[]>(() => readStoredCart());
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [promoCodeInput, setPromoCodeInput] = useState('');
   const [promoApplied, setPromoApplied] = useState(false);
@@ -108,6 +119,7 @@ export default function Home() {
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [phoneTouched, setPhoneTouched] = useState(false);
+  const [phoneFocused, setPhoneFocused] = useState(false);
   const [customerAddress, setCustomerAddress] = useState('');
   const [deliveryPoint, setDeliveryPoint] = useState<{ lat: number; lng: number } | null>(null);
   const [mapOpen, setMapOpen] = useState(false);
@@ -130,15 +142,29 @@ export default function Home() {
           }
         }
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setConfigLoading(false));
   }, []);
 
   // Save cart
   useEffect(() => {
-    try {
-      localStorage.setItem(cartStorageKey, JSON.stringify(cart));
-    } catch {}
+    writeStoredCart(cart);
   }, [cart]);
+
+  useEffect(() => {
+    const syncCart = () => setCart(readStoredCart());
+    window.addEventListener(CART_UPDATED_EVENT, syncCart);
+    window.addEventListener('storage', syncCart);
+    try {
+      const saved = JSON.parse(localStorage.getItem(favoritesStorageKey) || '[]');
+      if (Array.isArray(saved)) setFavoriteIds(saved.filter((id): id is string => typeof id === 'string'));
+    } catch { /* A broken favorites cache should not affect the catalog. */ }
+    return () => { window.removeEventListener(CART_UPDATED_EVENT, syncCart); window.removeEventListener('storage', syncCart); };
+  }, []);
+
+  useEffect(() => {
+    try { localStorage.setItem(favoritesStorageKey, JSON.stringify(favoriteIds)); } catch { /* Favorites remain usable for this session. */ }
+  }, [favoriteIds]);
 
   // Load user booking
   useEffect(() => {
@@ -166,34 +192,36 @@ export default function Home() {
   }, []);
 
   function addToCart(product: Product) {
-    setCart((prev) => {
-      const exists = prev.find((item) => item.product.id === product.id);
-      if (exists) {
-        return prev.map((item) =>
-          item.product.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
-        );
-      }
-      return [...prev, { product, quantity: 1 }];
-    });
-    setIsCartOpen(true);
+    changeCart(product.id, 1);
   }
 
   function updateQuantity(productId: string, delta: number) {
+    changeCart(productId, delta);
+  }
+
+  function changeCart(productId: string, delta: number) {
+    const product = (config.products || []).find((item) => item.id === productId);
+    if (!product) return;
+    const max = Math.max(0, Math.min(99, product.stockQuantity ?? 99));
+    const current = cart.find((item) => item.product.id === productId)?.quantity || 0;
+    const nextQuantity = Math.max(0, Math.min(max, current + delta));
+    if (nextQuantity === current) return;
     setCart((prev) => {
-      return prev
-        .map((item) => {
-          if (item.product.id === productId) {
-            const nextQty = item.quantity + delta;
-            return nextQty > 0 ? { ...item, quantity: nextQty } : null;
-          }
-          return item;
-        })
-        .filter(Boolean) as CartItem[];
+      const previousQuantity = prev.find((item) => item.product.id === productId)?.quantity || 0;
+      const quantity = Math.max(0, Math.min(max, previousQuantity + delta));
+      const next = prev.filter((item) => item.product.id !== productId);
+      if (quantity > 0) next.push({ product, quantity });
+      return next;
     });
+    if (delta > 0) toast.success('Добавлено в корзину');
   }
 
   function removeFromCart(productId: string) {
     setCart((prev) => prev.filter((item) => item.product.id !== productId));
+  }
+
+  function toggleFavorite(productId: string) {
+    setFavoriteIds((previous) => previous.includes(productId) ? previous.filter((id) => id !== productId) : [...previous, productId]);
   }
 
   const cartTotalItems = useMemo(() => {
@@ -218,7 +246,7 @@ export default function Home() {
     try {
       const response = await fetch('/api/promo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: cart.map((item) => ({ productId: item.product.id, quantity: item.quantity })), promoCode: promoCodeInput, deliveryType }) });
       const result = await response.json() as { error?: string };
-      if (!response.ok) throw new Error(result.error || 'Такого промокода нет');
+      if (!response.ok) throw new Error('Такого промокода нет');
       setPromoApplied(true);
     } catch (error) { setPromoError(error instanceof Error ? error.message : 'Такого промокода нет'); }
   }
@@ -302,7 +330,7 @@ export default function Home() {
   }, [enabledServices]);
 
   const filteredProducts = useMemo(() => {
-    return enabledProducts.filter((p) => {
+    const filtered = enabledProducts.filter((p) => {
       const matchCat = selectedCategory === 'all' || p.category === selectedCategory;
       const q = searchQuery.toLowerCase().trim();
       const matchQ =
@@ -310,9 +338,16 @@ export default function Home() {
         p.name.toLowerCase().includes(q) ||
         p.description.toLowerCase().includes(q) ||
         (p.category && p.category.toLowerCase().includes(q));
-      return matchCat && matchQ;
+      const matchFavorite = !favoritesOnly || favoriteIds.includes(p.id);
+      return matchCat && matchQ && matchFavorite;
     });
-  }, [enabledProducts, selectedCategory, searchQuery]);
+    return filtered.sort((a, b) => {
+      if (sortMode === 'price-asc') return a.price - b.price;
+      if (sortMode === 'price-desc') return b.price - a.price;
+      if (sortMode === 'newest') return (Date.parse(b.createdAt || '') || 0) - (Date.parse(a.createdAt || '') || 0);
+      return (b.popularity ?? (b.badge === 'Хит' ? 1 : 0)) - (a.popularity ?? (a.badge === 'Хит' ? 1 : 0));
+    });
+  }, [enabledProducts, selectedCategory, searchQuery, favoritesOnly, favoriteIds, sortMode]);
 
   const filteredServices = useMemo(() => {
     return enabledServices.filter((s) => {
@@ -504,6 +539,20 @@ export default function Home() {
                 </div>
               )}
 
+              <div className="catalog-extra-controls">
+                <label className="catalog-sort-label">Сортировка
+                  <select className="catalog-sort-select" value={sortMode} onChange={(event) => setSortMode(event.target.value as typeof sortMode)}>
+                    <option value="popular">Популярные</option>
+                    <option value="newest">Сначала новинки</option>
+                    <option value="price-asc">Сначала дешевле</option>
+                    <option value="price-desc">Сначала дороже</option>
+                  </select>
+                </label>
+                <button type="button" className={`service-category-pill ${favoritesOnly ? 'active' : ''}`} onClick={() => setFavoritesOnly((value) => !value)}>
+                  <Heart size={15} fill={favoritesOnly ? 'currentColor' : 'none'} /> Избранное
+                </button>
+              </div>
+
               {productCategories.length > 0 && (
                 <div className="service-category-pills">
                   <button
@@ -527,12 +576,13 @@ export default function Home() {
               )}
             </div>
 
-            {filteredProducts.length > 0 ? (
+            {configLoading ? <div className="product-grid" aria-label="Загрузка товаров">{Array.from({ length: 6 }, (_, index) => <div className="product-skeleton" key={index}><div /><span /><span /><b /></div>)}</div> : filteredProducts.length > 0 ? (
               <div className="product-grid">
                 {filteredProducts.map((p) => {
                   const inCart = cart.find((item) => item.product.id === p.id);
                   return (
                   <div key={p.id} className="product-card">
+                      <button type="button" className={`product-favorite-btn ${favoriteIds.includes(p.id) ? 'active' : ''}`} onClick={() => toggleFavorite(p.id)} aria-label={favoriteIds.includes(p.id) ? 'Убрать из избранного' : 'В избранное'}><Heart size={18} fill={favoriteIds.includes(p.id) ? 'currentColor' : 'none'} /></button>
                       <Link href={`/product/${encodeURIComponent(p.id)}`} className="product-image-wrap" aria-label={`Подробнее о товаре ${p.name}`}>
                         {p.imageUrl ? (
                           <img src={p.imageUrl} alt={p.name} loading="lazy" />
@@ -542,6 +592,7 @@ export default function Home() {
                           </div>
                         )}
                         {p.badge && <span className="product-badge">{p.badge}</span>}
+                        {!p.inStock && <span className="product-out-of-stock">Нет в наличии</span>}
                       </Link>
 
                       <div className="product-body">
@@ -557,14 +608,7 @@ export default function Home() {
                             )}
                           </div>
 
-                          <button
-                            type="button"
-                            className="product-add-btn"
-                            onClick={() => addToCart(p)}
-                          >
-                            <ShoppingCart size={15} />
-                            {inCart ? `В корзине (${inCart.quantity})` : 'В корзину'}
-                          </button>
+                          <CartQuantityControl quantity={inCart?.quantity || 0} max={Math.min(99, p.stockQuantity ?? 99)} disabled={!p.inStock || p.stockQuantity === 0} onAdd={() => addToCart(p)} onChange={(delta) => updateQuantity(p.id, delta)} />
                         </div>
                       </div>
                     </div>
@@ -573,7 +617,7 @@ export default function Home() {
               </div>
             ) : (
               <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--muted)' }}>
-                <p>Товары не найдены.</p>
+                <p>{favoritesOnly && favoriteIds.length === 0 ? 'В избранном пока нет товаров.' : 'Ничего не найдено. Измените поисковый запрос или фильтр.'}</p>
                 <button
                   type="button"
                   className="service-category-pill active"
@@ -581,6 +625,7 @@ export default function Home() {
                   onClick={() => {
                     setSearchQuery('');
                     setSelectedCategory('all');
+                    setFavoritesOnly(false);
                   }}
                 >
                   Показать все товары
@@ -823,15 +868,7 @@ export default function Home() {
                         <div className="cart-item-price">{money(product.price * quantity)}</div>
                       </div>
 
-                      <div className="cart-item-qty">
-                        <button type="button" onClick={() => updateQuantity(product.id, -1)}>
-                          -
-                        </button>
-                        <span style={{ fontSize: '13px', fontWeight: 800 }}>{quantity}</span>
-                        <button type="button" onClick={() => updateQuantity(product.id, 1)}>
-                          +
-                        </button>
-                      </div>
+                      <CartQuantityControl quantity={quantity} max={Math.min(99, product.stockQuantity ?? 99)} disabled={!product.inStock || product.stockQuantity === 0} onAdd={() => addToCart(product)} onChange={(delta) => updateQuantity(product.id, delta)} />
 
                       <button
                         type="button"
@@ -993,7 +1030,8 @@ export default function Home() {
                   required
                   placeholder="Иван Петров"
                   value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
+                  onBeforeInput={(e) => { const text = (e.nativeEvent as InputEvent).data; if (text && /[^\p{L} -]/u.test(text)) e.preventDefault(); }}
+                  onChange={(e) => setCustomerName(e.target.value.replace(/[^\p{L} -]/gu, '').slice(0, 100))}
                   style={{ width: '100%', height: '44px', background: '#0b0e14', border: '1px solid #262f42', borderRadius: '10px', color: '#fff', padding: '0 12px', boxSizing: 'border-box' }}
                 />
               </div>
@@ -1006,11 +1044,12 @@ export default function Home() {
                   type="text"
                   required
                   placeholder="+7 (999) 000-00-00"
-                  value={customerPhone}
+                  value={phoneFocused ? customerPhone : formatRussianPhone(customerPhone)}
                   inputMode="numeric"
-                  maxLength={11}
+                  maxLength={phoneFocused ? 11 : 20}
                   autoComplete="tel-national"
-                  onBlur={() => setPhoneTouched(true)}
+                  onFocus={() => setPhoneFocused(true)}
+                  onBlur={() => { setPhoneTouched(true); setPhoneFocused(false); }}
                   onBeforeInput={(e) => { const event = e.nativeEvent as InputEvent; const text = event.data; if (event.inputType !== 'insertFromPaste' && text && /\D/.test(text)) e.preventDefault(); }}
                   onChange={(e) => setCustomerPhone(e.target.value.replace(/\D/g, '').slice(0, 11))}
                   onPaste={(e) => { e.preventDefault(); const input = e.currentTarget; const pasted = e.clipboardData.getData('text').replace(/\D/g, ''); const start = input.selectionStart ?? customerPhone.length; const end = input.selectionEnd ?? start; setCustomerPhone(`${customerPhone.slice(0, start)}${pasted}${customerPhone.slice(end)}`.slice(0, 11)); }}

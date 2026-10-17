@@ -6,6 +6,10 @@ import { ArrowLeft, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import type { Config, Product } from '@/lib/shinslot';
 import { calculateDeliveryForProduct } from '@/lib/commerce';
 import { money } from '@/lib/shinslot';
+import { CART_UPDATED_EVENT, readStoredCart, writeStoredCart } from '@/lib/cart-client';
+import { CartQuantityControl } from '@/components/cart-quantity-control';
+import { toast } from 'sonner';
+import { Spinner } from '@/components/ui/spinner';
 
 export default function ProductDetail({ productId }: { productId: string }) {
   const [config, setConfig] = useState<Config | null>(null);
@@ -13,16 +17,23 @@ export default function ProductDetail({ productId }: { productId: string }) {
   const [lightbox, setLightbox] = useState(false);
   const [zoomed, setZoomed] = useState(false);
   const [cartCount, setCartCount] = useState(0);
+  const [productQuantity, setProductQuantity] = useState(0);
   const [startX, setStartX] = useState<number | null>(null);
   useEffect(() => {
     fetch('/api/config').then((r) => r.ok ? r.json() : Promise.reject()).then((d: { config: Config }) => setConfig(d.config)).catch(() => setConfig(null));
-    try {
-      const items = JSON.parse(localStorage.getItem('shinslot-cart-items') || '[]');
-      if (Array.isArray(items)) setCartCount(items.reduce((n, x) => n + Math.max(0, Number(x.quantity) || 0), 0));
-    } catch { /* Ignore invalid local cart data. */ }
-  }, []);
+    const syncCart = () => {
+      const items = readStoredCart();
+      setCartCount(items.reduce((total, line) => total + line.quantity, 0));
+      setProductQuantity(items.find((line) => line.product.id === productId)?.quantity || 0);
+    };
+    syncCart();
+    window.addEventListener(CART_UPDATED_EVENT, syncCart);
+    window.addEventListener('storage', syncCart);
+    return () => { window.removeEventListener(CART_UPDATED_EVENT, syncCart); window.removeEventListener('storage', syncCart); };
+  }, [productId]);
   const product = useMemo(() => config?.products.find((item) => item.id === productId), [config, productId]);
   const images = useMemo(() => product ? [...new Set([product.imageUrl, ...(product.galleryImages || [])].filter(Boolean))] : [], [product]);
+  const relatedProducts = useMemo(() => product ? (config?.products || []).filter((item) => item.enabled && item.id !== product.id && ((product.category && item.category === product.category) || (product.productType && item.productType === product.productType))).slice(0, 8) : [], [config, product]);
   const navigate = useCallback((delta: number) => {
     if (!images.length) return;
     setActiveImage((index) => (index + delta + images.length) % images.length);
@@ -39,18 +50,21 @@ export default function ProductDetail({ productId }: { productId: string }) {
     document.body.style.overflow = 'hidden';
     return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = ''; };
   }, [lightbox, navigate]);
-  function addToCart(item: Product) {
-    try {
-      const cart = JSON.parse(localStorage.getItem('shinslot-cart-items') || '[]');
-      const existing = Array.isArray(cart) ? cart.find((line) => line?.product?.id === item.id) : undefined;
-      const next = Array.isArray(cart) ? cart.map((line) => line?.product?.id === item.id ? { ...line, quantity: (Number(line.quantity) || 0) + 1 } : line) : [];
-      if (!existing) next.push({ product: item, quantity: 1 });
-      localStorage.setItem('shinslot-cart-items', JSON.stringify(next));
-      setCartCount((count) => count + 1);
-    } catch { /* Surface the detail page even when local storage is unavailable. */ }
+  function changeCart(item: Product, delta: number) {
+    const cart = readStoredCart();
+    const current = cart.find((line) => line.product.id === item.id)?.quantity || 0;
+    const cap = Math.max(0, Math.min(99, item.stockQuantity ?? 99));
+    const nextQuantity = Math.max(0, Math.min(cap, current + delta));
+    const next = nextQuantity === 0
+      ? cart.filter((line) => line.product.id !== item.id)
+      : cart.some((line) => line.product.id === item.id)
+        ? cart.map((line) => line.product.id === item.id ? { product: item, quantity: nextQuantity } : line)
+        : [...cart, { product: item, quantity: nextQuantity }];
+    writeStoredCart(next);
+    if (delta > 0 && nextQuantity > current) toast.success('Добавлено в корзину');
   }
 
-  if (!config) return <main className="product-detail-shell"><p role="status">Загружаем товар…</p></main>;
+  if (!config) return <main className="product-detail-shell"><p role="status"><Spinner /> Загружаем товар…</p></main>;
   if (!product || !product.enabled) return <main className="product-detail-shell"><Link className="product-back" href="/"><ArrowLeft size={16} /> Назад в каталог</Link><h1>Товар не найден</h1></main>;
   return <main className={`site theme-${config.theme || 'navy'} product-detail-shell`}>
     <Link className="product-back" href="/"><ArrowLeft size={16} /> Назад в каталог</Link>
@@ -70,9 +84,25 @@ export default function ProductDetail({ productId }: { productId: string }) {
         <p className="product-detail-shipping">Доставка одной штуки: {calculateDeliveryForProduct(config, product) ? money(calculateDeliveryForProduct(config, product)) : 'бесплатно'}</p>
         <p className="product-detail-description">{product.description}</p>
         {product.attributes?.filter((item) => item.label.trim() && item.value.trim()).length ? <><h2>Характеристики</h2><dl className="product-attributes">{product.attributes.filter((item) => item.label.trim() && item.value.trim()).map((item, i) => <div key={`${item.label}-${i}`}><dt>{item.label}</dt><dd>{item.value}</dd></div>)}</dl></> : null}
-        <button type="button" className="product-add-btn product-detail-add" disabled={!product.inStock} onClick={() => addToCart(product)}>{product.inStock ? 'Добавить в корзину' : 'Нет в наличии'}</button>
+        {product.details?.advantages?.length ? <><h2>Преимущества</h2><ul className="product-detail-list">{product.details.advantages.map((item, i) => <li key={`${item}-${i}`}>{item}</li>)}</ul></> : null}
+        {product.details?.included?.length ? <><h2>Комплектация</h2><ul className="product-detail-list">{product.details.included.map((item, i) => <li key={`${item}-${i}`}>{item}</li>)}</ul></> : null}
+        <div className="product-policies">
+          <p><strong>Гарантия:</strong> {product.details?.warranty || 'Уточните срок гарантии у продавца.'}</p>
+          <p><strong>Доставка:</strong> {product.details?.delivery || 'Срок и стоимость рассчитываются при оформлении заказа.'}</p>
+          <p><strong>Возврат:</strong> {product.details?.returns || 'Условия возврата уточняются у продавца до оформления заказа.'}</p>
+        </div>
+        <CartQuantityControl quantity={productQuantity} max={Math.min(99, product.stockQuantity ?? 99)} disabled={!product.inStock || product.stockQuantity === 0} onAdd={() => changeCart(product, 1)} onChange={(delta) => changeCart(product, delta)} />
       </section>
     </div>
+    {images.length < 5 && <p className="product-gallery-hint">Добавьте дополнительные фото товара в поле galleryImages: спереди, сбоку, сзади, сверху и деталь/в использовании.</p>}
+    {relatedProducts.length > 0 && <section className="product-related" aria-labelledby="related-products-title">
+      <h2 id="related-products-title">Похожие товары</h2>
+      <div className="product-related-grid">{relatedProducts.map((item) => <Link href={`/product/${encodeURIComponent(item.id)}`} className="product-related-card" key={item.id}>
+        <img src={item.imageUrl} alt="" loading="lazy" />
+        <strong>{item.name}</strong>
+        <span>{money(item.price)}</span>
+      </Link>)}</div>
+    </section>}
     {lightbox && <div className="product-lightbox" role="dialog" aria-modal="true" aria-label="Просмотр фотографий" onClick={() => setLightbox(false)} onTouchStart={(event) => setStartX(event.touches[0]?.clientX ?? null)} onTouchEnd={(event) => { if (startX !== null && Math.abs(event.changedTouches[0].clientX - startX) > 45) navigate(event.changedTouches[0].clientX < startX ? 1 : -1); setStartX(null); }}>
       <button type="button" className="product-lightbox-close" aria-label="Закрыть" onClick={() => setLightbox(false)}><X /></button>
       {images.length > 1 && <button type="button" className="product-lightbox-arrow previous" aria-label="Предыдущее фото" onClick={(event) => { event.stopPropagation(); navigate(-1); }}><ChevronLeft /></button>}
