@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 
 type Overview = {
   storage: string;
@@ -100,7 +101,7 @@ export default function PlatformAdmin() {
   return <main style={styles.page}><div style={styles.shell}>
     <header style={styles.header}>
       <div><div style={{ color: '#3156c8', fontWeight: 700, fontSize: 12, letterSpacing: 1 }}>ВНУТРЕННЯЯ ПАНЕЛЬ</div><h1 style={{ margin: '5px 0', fontSize: 28 }}>Работоспособность платформы</h1><div style={styles.muted}>Поддержка и эксплуатация · отдельная роль от владельцев магазинов</div></div>
-      <button type="button" onClick={signOut} style={{ ...styles.button, background: '#e8ecf4', color: '#25304a' }}>Выйти</button>
+      <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap' }}><Link href="/studio" style={{ ...styles.button, textDecoration: 'none' }}>Агентская студия</Link><button type="button" onClick={signOut} style={{ ...styles.button, background: '#e8ecf4', color: '#25304a' }}>Выйти</button></div>
     </header>
     {data ? <>
       <div style={styles.grid}>
