@@ -82,6 +82,7 @@ function BookingCard({
   const [editVersion, setEditVersion] = useState(b.version || 1),
     [moveVersion, setMoveVersion] = useState(b.version || 1);
   const [history, setHistory] = useState<BookingEvent[] | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const endpoint = (action: string, query = "") =>
     projectId
       ? `/api/detailing/projects/${projectId}/${action}${query ? "?" + query : ""}`
@@ -133,6 +134,26 @@ function BookingCard({
       active = false;
     };
   }, [move, date, b.id, b.version]);
+  useEffect(() => {
+    setHistory(null);
+    if (!historyOpen) return;
+    let current = true;
+    request(
+      "booking-history",
+      "GET",
+      undefined,
+      new URLSearchParams({ bookingId: b.id }).toString(),
+    )
+      .then((value) => {
+        if (current) setHistory(value.events);
+      })
+      .catch((error) => {
+        if (current) setError(error.message);
+      });
+    return () => {
+      current = false;
+    };
+  }, [historyOpen, b.id, b.version, projectId]);
   async function mutate(
     value: Partial<BookingMutation>,
     version = b.version || 1,
@@ -153,9 +174,11 @@ function BookingCard({
       setHistory(null);
     } catch (e) {
       setError(
-        e instanceof Error
-          ? e.message
-          : "Связь прервана. Обновите список перед повторным действием.",
+        e instanceof DOMException
+          ? "Ответ не получен. Изменение могло сохраниться; обновите список и проверьте результат перед повтором."
+          : e instanceof Error
+            ? e.message
+            : "Связь прервана. Обновите список перед повторным действием.",
       );
       await onRefresh().catch(() => {});
     } finally {
@@ -305,19 +328,7 @@ function BookingCard({
         </button>
         <p className="bm-muted">Видна только в админках.</p>
       </details>
-      <details
-        onToggle={(e) => {
-          if (e.currentTarget.open && !history)
-            void request(
-              "booking-history",
-              "GET",
-              undefined,
-              new URLSearchParams({ bookingId: b.id }).toString(),
-            )
-              .then((v) => setHistory(v.events))
-              .catch((e) => setError(e.message));
-        }}
-      >
+      <details onToggle={(e) => setHistoryOpen(e.currentTarget.open)}>
         <summary>История заявки</summary>
         {history === null ? (
           <p>Загружаем…</p>
