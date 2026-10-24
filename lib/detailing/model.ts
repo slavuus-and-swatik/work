@@ -9,6 +9,25 @@ const image = z
       /^\/(?!\/)[a-zA-Z0-9/_ .-]+$/.test(v) || /^https:\/\/[^\s]+$/.test(v),
     "Укажите HTTPS-ссылку или загрузите фотографию",
   );
+const socialUrl = z
+  .string()
+  .trim()
+  .max(2000)
+  .refine((value) => {
+    if (!value) return true;
+    try {
+      const url = new URL(value);
+      return (
+        /^https:\/\//i.test(value) &&
+        !/\s/.test(value) &&
+        url.protocol === "https:" &&
+        !url.username &&
+        !url.password
+      );
+    } catch {
+      return false;
+    }
+  }, "Укажите полную HTTPS-ссылку без логина и пароля");
 export const detailConfigSchema = z
   .object({
     name: text(70).min(2),
@@ -29,6 +48,10 @@ export const detailConfigSchema = z
         .regex(/^https:\/\/t\.me\/[a-zA-Z0-9_]+$/),
       z.literal(""),
     ]),
+    socialLinks: z
+      .array(z.object({ label: text(40).min(1), url: socialUrl }))
+      .max(8)
+      .default([]),
     aboutTitle: text(120),
     aboutText: text(1200),
     services: z
@@ -144,9 +167,9 @@ export type BookingMutation = z.infer<typeof bookingMutationSchema>;
 export const defaultDetailConfig: DetailConfig = {
   name: "FORMA",
   eyebrow: "ДЕТЕЙЛИНГ · ЗАЩИТА · ЭСТЕТИКА",
-  headline: "Искусство\nсохранять новое.",
+  headline: "Блеск кузова.\nЧистота в деталях.",
   description:
-    "Продуманный уход за каждой поверхностью. От деликатной очистки до защиты кузова — выберите то, что нужно вашему автомобилю.",
+    "Детейлинг-мойка, полировка и защита кузова. Удаляем дорожный налёт, возвращаем глубину цвета, ухаживаем за кожей и тканью салона.",
   accent: "#5d8fe9",
   hero: "/detailing-hero.png",
   logo: "",
@@ -155,15 +178,16 @@ export const defaultDetailConfig: DetailConfig = {
   city: "Ваш город",
   hoursLabel: "Ежедневно · 09:00–21:00",
   telegram: "",
-  aboutTitle: "Внимание, которое\nвидно в деталях.",
+  socialLinks: [],
+  aboutTitle: "Сначала осмотр.\nЗатем точный уход.",
   aboutText:
-    "Хороший результат начинается с осмотра. Обсудим состояние автомобиля, подберём работы и согласуем стоимость до начала. После ухода расскажем, как сохранить результат.",
+    "Осматриваем покрытие и салон, подбираем составы под материалы автомобиля. До начала работ согласуем объём и стоимость. После — покажем результат и объясним, как сохранить покрытие и чистоту.",
   services: [
     {
       id: "wash",
       name: "Детейлинг-мойка",
       description:
-        "Бережная очистка кузова, дисков и труднодоступных мест. Для регулярного ухода.",
+        "Предварительная бесконтактная очистка, ручная мойка кузова и дисков, продувка щелей и сушка мягкими полотенцами.",
       image: "/detailing-services/wash.jpg",
       price: 3500,
       duration: 90,
@@ -172,7 +196,7 @@ export const defaultDetailConfig: DetailConfig = {
       id: "polish",
       name: "Полировка кузова",
       description:
-        "Восстановление глубины цвета и блеска. Объём работ определим после осмотра.",
+        "Очищаем лак от въевшихся загрязнений, подбираем абразив и убираем мелкие царапины и матовость. Возвращаем глубину цвета без лишнего снятия лака.",
       image: "/detailing-services/polish.jpg",
       price: 18000,
       duration: 240,
@@ -181,7 +205,7 @@ export const defaultDetailConfig: DetailConfig = {
       id: "ceramic",
       name: "Керамическая защита",
       description:
-        "Защитное покрытие для лакокрасочной поверхности. Состав подбирается под автомобиль.",
+        "Подготавливаем и обезжириваем кузов, наносим керамический состав. Покрытие усиливает блеск, отталкивает воду и облегчает последующие мойки.",
       image: "/detailing-services/ceramic.jpg",
       price: 25000,
       duration: 300,
@@ -190,7 +214,7 @@ export const defaultDetailConfig: DetailConfig = {
       id: "interior",
       name: "Уход за салоном",
       description:
-        "Деликатная очистка ткани, кожи и пластика с учётом особенностей материалов.",
+        "Глубокая очистка сидений, ковров и пластика. Для кожи — деликатный состав и защитный уход, для ткани — экстракторная чистка и сушка.",
       image: "/detailing-services/interior.jpg",
       price: 12000,
       duration: 180,

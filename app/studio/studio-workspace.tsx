@@ -1,4 +1,5 @@
 "use client";
+import SocialLinksEditor from "@/components/detailing/social-links-editor";
 import BookingManager from "@/components/detailing/booking-manager";
 import {
   Children,
@@ -879,7 +880,7 @@ export default function StudioWorkspace() {
                     {textField("city", "Город")}
                     {textField("address", "Адрес")}
                     {textField("phone", "Телефон")}
-                    {textField("telegram", "Telegram: https://t.me/…")}
+                    <SocialLinksEditor value={config.socialLinks} telegram={config.telegram} onChange={value=>{set("socialLinks",value);set("telegram","");}}/>
                     {textField("hoursLabel", "Расписание на сайте")}
                     <h3>Расписание записи · МСК</h3>
                     <div className="ds-fields-row">
@@ -952,10 +953,10 @@ export default function StudioWorkspace() {
                         checked={config.demo}
                         onChange={(e) => set("demo", e.target.checked)}
                       />
-                      Демонстрация — не принимать заявки
+                      Песочница — запись без личных данных
                     </label>
                     <p className="ds-hint">
-                      Для реальных заявок выключите демонстрацию, заполните
+                      Для рабочих заявок выключите песочницу, заполните
                       контакты и условия обработки данных. Сохраните и
                       согласуйте эту версию.
                     </p>

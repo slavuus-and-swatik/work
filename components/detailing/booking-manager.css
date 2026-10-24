@@ -150,3 +150,13 @@
     transition: none !important;
   }
 }
+
+.bm .bm-archive {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0;
+}
+.bm .bm-archive input {
+  width: auto;
+}

@@ -20,10 +20,24 @@ type Props = {
   onRefresh: () => Promise<void>;
 };
 export default function BookingManager(props: Props) {
+  const [archive, setArchive] = useState(false);
+  const visible = props.bookings.filter((b) =>
+    archive ? b.sandbox : !b.sandbox,
+  );
   const [filter, setFilter] = useState("");
   const [day, setDay] = useState("");
   return (
     <section className="bm">
+      {props.bookings.some((b) => b.sandbox) && (
+        <label className="bm-archive">
+          <input
+            type="checkbox"
+            checked={archive}
+            onChange={(e) => setArchive(e.target.checked)}
+          />{" "}
+          Служебный архив
+        </label>
+      )}
       <div className="bm-filters">
         <label>
           Статус
@@ -46,14 +60,13 @@ export default function BookingManager(props: Props) {
         </label>
       </div>
       <p className="bm-muted">
-        Новых: {props.bookings.filter((b) => b.status === "pending").length} ·
-        Подтверждено:{" "}
-        {props.bookings.filter((b) => b.status === "confirmed").length}
+        Новых: {visible.filter((b) => b.status === "pending").length} ·
+        Подтверждено: {visible.filter((b) => b.status === "confirmed").length}
       </p>
-      {!props.bookings.some(
+      {!visible.some(
         (b) => (!filter || b.status === filter) && (!day || b.date === day),
       ) && <p className="bm-muted">Нет заявок по выбранным фильтрам.</p>}
-      {props.bookings
+      {visible
         .filter(
           (b) => (!filter || b.status === filter) && (!day || b.date === day),
         )
@@ -193,7 +206,7 @@ function BookingCard({
       <div className="bm-meta">
         <span className={`bm-badge bm-${b.status}`}>{labels[b.status]}</span>
         <small>№ {b.id.slice(0, 8).toUpperCase()}</small>
-        {b.sandbox && <span className="bm-badge">Тестовая запись</span>}
+        {b.sandbox && <span className="bm-badge">Служебная запись</span>}
       </div>
       <h3>{b.serviceName}</h3>
       <p>
@@ -206,17 +219,15 @@ function BookingCard({
         Пост {b.bay} · {b.duration} мин · от {money(b.price)}
       </p>
       <p>
-        {b.name} · {b.car}
+        {b.sandbox ? "Проверка расписания" : `${b.name} · ${b.car}`}
         <br />
         {b.sandbox ? (
-          <span className="bm-muted">
-            Контакты вымышленные — звонить не нужно
-          </span>
+          <span className="bm-muted">Служебная запись без контактов</span>
         ) : (
           <a href={`tel:+${b.phone}`}>+{b.phone}</a>
         )}
       </p>
-      {b.comment && <p>{b.comment}</p>}
+      {b.comment && !b.sandbox && <p>{b.comment}</p>}
       <div className="bm-actions">
         {b.status === "pending" && (
           <button

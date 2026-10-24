@@ -342,7 +342,10 @@ function slotsForDuration(
 ) {
   if (!validDate(site.config, date)) return [];
   const existing = bookings(site.projectId, date).filter(
-    (b) => b.status !== "cancelled" && b.id !== excludeId,
+    (b) =>
+      b.status !== "cancelled" &&
+      b.id !== excludeId &&
+      (!b.sandbox || site.config.demo),
   );
   const slots: { time: string; bay: number }[] = [];
   for (

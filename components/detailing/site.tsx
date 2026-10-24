@@ -66,6 +66,12 @@ export default function DetailingSite({
     payload: Record<string, unknown>;
   } | null>(null);
   const dialog = useRef<HTMLDialogElement>(null);
+  const socialLinks = [
+    ...(c.socialLinks || []),
+    ...(c.telegram && !(c.socialLinks || []).some((x) => x.url === c.telegram)
+      ? [{ label: "Telegram", url: c.telegram }]
+      : []),
+  ].filter((link) => link.url);
   const service = c.services.find((s) => s.id === selected);
   const disabled = preview || !slug;
   const sandbox = c.demo && !disabled;
@@ -127,6 +133,15 @@ export default function DetailingSite({
         setReceiptNote("Проверяем последнюю заявку…");
         void readReceipt(stored.token)
           .then((value) => {
+            if (value?.sandbox && !c.demo) {
+              lastToken.current = "";
+              setReceipt(null);
+              setReceiptNote("");
+              try {
+                localStorage.removeItem(`forma-receipt:${slug}`);
+              } catch {}
+              return;
+            }
             setReceipt(value);
             setReceiptNote(
               value
@@ -143,7 +158,7 @@ export default function DetailingSite({
     } catch {
       /* Storage is optional; the request still works in private mode. */
     }
-  }, [slug, disabled]);
+  }, [slug, disabled, c.demo]);
   useEffect(() => {
     const element = root.current;
     if (
@@ -447,15 +462,15 @@ export default function DetailingSite({
             <div>
               <p className="dt-eyebrow">01 / УСЛУГИ</p>
               <h2>
-                Ваш автомобиль.
+                Уход за кузовом.
                 <br />
-                <span>Наше внимание.</span>
+                <span>Чистота салона.</span>
               </h2>
             </div>
             <p>
               Выберите нужный уход.
               <br />
-              Точную стоимость согласуем после осмотра.
+              Объём работ и стоимость — после осмотра.
             </p>
           </div>
           <div className="dt-service-list">
@@ -570,9 +585,9 @@ export default function DetailingSite({
           <div>
             <p className="dt-eyebrow">СЛЕДУЮЩИЙ ШАГ</p>
             <h2>
-              Вернём удовольствие
+              Сохраните характер
               <br />
-              <span>от каждой детали.</span>
+              <span>вашего автомобиля.</span>
             </h2>
             <button className="dt-primary" onClick={() => open()}>
               Выбрать время <ArrowUpRight size={20} />
@@ -591,11 +606,17 @@ export default function DetailingSite({
                 {c.phone}
               </a>
             )}
-            {c.telegram && (
-              <a href={c.telegram} target="_blank" rel="noreferrer">
-                Написать в Telegram <ArrowUpRight size={15} />
+            {socialLinks.map((link, i) => (
+              <a
+                key={i}
+                href={link.url}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {link.label}
+                <ArrowUpRight size={15} />
               </a>
-            )}
+            ))}
             {c.address && (
               <a
                 href={
@@ -613,7 +634,7 @@ export default function DetailingSite({
       </main>
       <footer className="dt-footer">
         <strong>{c.name}</strong>
-        <span>{c.legalName || "Демонстрационный шаблон детейлинга"}</span>
+        <span>{c.legalName || "Уход за кузовом и салоном"}</span>
         <button onClick={() => setPrivacy(!privacy)}>Обработка данных</button>
       </footer>
       {privacy && (

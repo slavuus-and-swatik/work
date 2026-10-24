@@ -200,13 +200,18 @@ try {
   );
   assert.equal(demoPrivate.phone, "70000000000");
   assert.equal(demoPrivate.name, "Тестовая заявка");
-  await api(`projects/${p.id}/bookings`, "PATCH", {
-    id: demo.id,
-    status: "cancelled",
-  });
+  // Keep the sandbox reservation pending: switching to live must release its slot.
+
   const config = {
     ...p.draft,
     demo: false,
+    socialLinks: [
+      { label: "MAX", url: "https://max.ru/" },
+      { label: "VK", url: "https://vk.com/" },
+      { label: "Telegram", url: "https://t.me/" },
+      { label: "WhatsApp", url: "https://www.whatsapp.com/" },
+      { label: "Портфолио", url: "https://example.com/portfolio" },
+    ],
     headline: "Changed draft",
     phone: "+7 999 000-00-00",
     address: "QA test address",
@@ -214,6 +219,28 @@ try {
     privacyText:
       "QA fixture only. Consent text for testing the booking workflow without real customer data.",
   };
+  for (const unsafeUrl of [
+    "javascript:alert(1)",
+    "http://example.com/",
+    "https://login:password@example.com/",
+    "https:example.com",
+  ]) {
+    await api(
+      `projects/${p.id}`,
+      "PATCH",
+      {
+        version: p.version,
+        clientName: p.clientName,
+        references: [],
+        config: {
+          ...config,
+          socialLinks: [{ label: "Unsafe", url: unsafeUrl }],
+        },
+      },
+      true,
+      400,
+    );
+  }
   p = (
     await api(`projects/${p.id}`, "PATCH", {
       version: p.version,
@@ -284,6 +311,27 @@ try {
   );
   p = (await api(`projects/${p.id}/publish`, "POST", { version: p.version }))
     .project;
+  const liveHtml = await (await fetch(origin + `/s/${p.slug}`)).text();
+  for (const social of config.socialLinks)
+    assert.ok(
+      liveHtml.includes(social.url),
+      "Published social link " + social.label,
+    );
+  assert.ok(
+    !liveHtml.includes("тестовая запись с вымышленными"),
+    "Live site must not show sandbox copy",
+  );
+  assert.ok(
+    (
+      await api(
+        `sites/${p.slug}/slots?service=${p.draft.services[0].id}&date=${demoDate}`,
+        "GET",
+        undefined,
+        false,
+      )
+    ).slots.includes(demoSlots[0]),
+    "Old sandbox reservations must not block live customers",
+  );
   const date = new Date(Date.now() + 86400000 * 2).toISOString().slice(0, 10),
     service = p.draft.services[0].id;
   const slots = (
@@ -681,6 +729,7 @@ try {
   const clientProject = (await client("project")).result.project;
   assert.equal(clientProject.id, p.id);
   assert.equal(clientProject.references, undefined);
+  assert.deepEqual(clientProject.draft.socialLinks, config.socialLinks);
   const changed = {
     ...clientProject.draft,
     headline: "Client managed headline",
@@ -856,7 +905,7 @@ try {
     await api(`sites/${p.slug}/bookings`, "POST", booking, false, 500);
   }
   console.log(
-    "PASS: auth/isolation, sandbox, approval, duration boundaries, atomic reschedule, audit history, optimistic concurrency, concurrent booking, idempotent retry, private receipt recovery, verified backup and real restore/restart, cancellation, database outage readiness.",
+    "PASS: auth/isolation, social link validation/publishing, sandbox-to-live migration, sandbox, approval, duration boundaries, atomic reschedule, audit history, optimistic concurrency, concurrent booking, idempotent retry, private receipt recovery, verified backup and real restore/restart, cancellation, database outage readiness.",
   );
   console.log("QA fixture:", dir);
   if (process.argv.includes("--keep")) {
