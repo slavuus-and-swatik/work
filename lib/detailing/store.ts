@@ -22,17 +22,22 @@ export class DetailError extends Error {
 function decode<T>(row: unknown): T | null {
   return row ? (JSON.parse((row as { data: string }).data) as T) : null;
 }
+function displayConfig(config: DetailConfig): DetailConfig {
+  if (!(config.demo && config.name === "FORMA" && config.accent === "#c9ed72")) return config;
+  return { ...config, accent: defaultDetailConfig.accent, services: config.services.map((service) => ({ ...service, image: service.image || defaultDetailConfig.services.find((x) => x.id === service.id)?.image || "" })) };
+}
 export const listProjects = () =>
   db()
     .prepare("SELECT data FROM detail_projects")
     .all()
-    .map((r) => decode<DetailProject>(r)!)
+    .map((r) => { const p = decode<DetailProject>(r)!; p.draft = displayConfig(p.draft); return p; })
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 export function project(id: string) {
   const p = decode<DetailProject>(
     db().prepare("SELECT data FROM detail_projects WHERE id=?").get(id),
   );
   if (!p) throw new DetailError("Проект не найден", 404);
+  p.draft = displayConfig(p.draft);
   return p;
 }
 function save(p: DetailProject) {
@@ -187,22 +192,51 @@ export function publishProject(id: string, version: number) {
         "Опубликовать можно только согласованную текущую версию",
         409,
       );
-    if (
-      !r.config.demo &&
-      (!/^[78]\d{10}$/.test(r.config.phone.replace(/\D/g, "")) ||
-        !r.config.address ||
-        !r.config.legalName ||
-        r.config.privacyText.length < 40)
-    )
-      throw new DetailError(
-        "Для рабочего сайта заполните телефон, адрес, наименование оператора и текст обработки данных, затем согласуйте новую версию",
-      );
+    assertPublishable(r.config);
     db()
       .prepare(
         "INSERT INTO detail_sites VALUES(?,?,?) ON CONFLICT(project_id) DO UPDATE SET config=excluded.config,version=excluded.version",
       )
       .run(id, JSON.stringify(r.config), r.version);
     p.publishedVersion = r.version;
+    return save(p);
+  });
+}
+function assertPublishable(config: DetailConfig) {
+  if (!config.demo && (!/^[78]\d{10}$/.test(config.phone.replace(/\D/g, "")) || !config.address || !config.legalName || config.privacyText.length < 40))
+    throw new DetailError("Для рабочего сайта заполните телефон, адрес, наименование оператора и текст обработки данных");
+}
+export function updateClientContent(id: string, version: number, input: unknown) {
+  const config = detailConfigSchema.parse(input);
+  return transaction(() => {
+    const p = project(id);
+    if (p.publishedVersion === null) throw new DetailError("Кабинет доступен после запуска сайта", 409);
+    if (p.version !== version) throw new DetailError("Сайт изменился в другой вкладке. Обновите страницу.", 409);
+    if (p.reviewToken) {
+      const r = review(p.reviewToken);
+      if (r.status === "pending") {
+        r.status = "superseded";
+        db().prepare("UPDATE detail_reviews SET data=? WHERE token=?").run(JSON.stringify(r), r.token);
+      }
+    }
+    p.draft = config;
+    p.version++;
+    p.reviewToken = null;
+    p.reviewStatus = null;
+    p.reviewVersion = null;
+    p.reviewComment = "";
+    return save(p);
+  });
+}
+export function publishClientContent(id: string, version: number) {
+  return transaction(() => {
+    const p = project(id);
+    if (p.publishedVersion === null) throw new DetailError("Сайт ещё не передан клиенту", 409);
+    if (p.version !== version) throw new DetailError("Сначала обновите проект", 409);
+    const config = detailConfigSchema.parse(p.draft);
+    assertPublishable(config);
+    db().prepare("UPDATE detail_sites SET config=?,version=? WHERE project_id=?").run(JSON.stringify(config), p.version, id);
+    p.publishedVersion = p.version;
     return save(p);
   });
 }
@@ -223,7 +257,7 @@ export function liveSite(slug: string) {
   if (!row) throw new DetailError("Сайт пока не опубликован", 404);
   return {
     projectId: row.id,
-    config: JSON.parse(row.config) as DetailConfig,
+    config: displayConfig(JSON.parse(row.config) as DetailConfig),
     version: row.version,
   };
 }

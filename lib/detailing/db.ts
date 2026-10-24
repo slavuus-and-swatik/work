@@ -20,6 +20,9 @@ export function db() {
     CREATE INDEX IF NOT EXISTS detail_booking_day ON detail_bookings(project_id,date);
     CREATE TABLE IF NOT EXISTS detail_limits(key TEXT PRIMARY KEY, count INTEGER NOT NULL, until INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS detail_assets(id TEXT PRIMARY KEY, type TEXT NOT NULL, bytes BLOB NOT NULL);
+    CREATE TABLE IF NOT EXISTS detail_client_access(project_id TEXT PRIMARY KEY REFERENCES detail_projects(id), password_hash TEXT, invite_hash TEXT, invite_expires INTEGER);
+    CREATE TABLE IF NOT EXISTS detail_client_sessions(token_hash TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES detail_projects(id), expires INTEGER NOT NULL);
+    CREATE INDEX IF NOT EXISTS detail_client_sessions_project ON detail_client_sessions(project_id);
   `);
   return connection;
 }

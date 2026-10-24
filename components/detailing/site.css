@@ -343,6 +343,7 @@
   color: #adb3a5;
   margin-top: 14px;
 }
+.dt-gallery-open{display:block;width:100%;padding:0;border:0;background:transparent;cursor:zoom-in;text-align:left}
 .dt-faq {
   display: grid;
   grid-template-columns: 1fr 1.2fr;
@@ -741,3 +742,48 @@
     transition: none !important;
   }
 }
+
+/* FORMA / midnight blue editorial direction */
+.dt{--dt-accent:#5d8fe9;background:#0a1019;color:#eff4fb}
+.dt-demo{background:#172439;color:#b6c8e0}
+.dt-header{background:#0a1019;border-color:#ffffff1b}
+.dt-header nav{color:#a6b4ca}
+.dt-header-cta{border-color:#465872}
+.dt-hero{min-height:720px}
+.dt-hero-shade{background:linear-gradient(90deg,#060c17f5,#07101ca8 46%,#07101c20 83%),linear-gradient(0deg,#08101fcb,transparent 42%)}
+.dt-eyebrow{color:#a9c1e3;letter-spacing:.22em}
+.dt h1{font-weight:400;letter-spacing:-.065em;max-width:750px}
+.dt-intro{color:#c4cfdf}
+.dt-primary{color:#07111e!important;border-radius:1px}
+.dt-primary:hover{filter:brightness(1.15)}
+.dt-hero-bottom{color:#becce0}
+.dt-section{padding-top:110px;padding-bottom:110px}
+.dt-section-heading>p{color:#a1aec0}
+.dt h2 span{color:#75869f}
+.dt-service-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;border:1px solid #2c394d;background:#2c394d}
+.dt-service,.dt-service:last-child{display:grid;grid-template-columns:34px minmax(0,1fr) 44px;gap:16px;align-content:start;align-items:start;padding:18px 18px 22px;border:0;background:#0e1826;min-width:0;transition:background .25s}
+.dt-service:hover{background:#152338}
+.dt-service-image{grid-column:1/-1;width:100%;aspect-ratio:1.9/1;object-fit:cover;filter:saturate(.8);margin-bottom:11px}
+.dt-service .dt-index{grid-column:1;grid-row:2;color:#6f91c1}
+.dt-service>div:not(.dt-price){grid-column:2;grid-row:2}
+.dt-service h3{font-size:24px;letter-spacing:-.04em}
+.dt-service p{color:#a3b1c5}
+.dt-service .dt-price{grid-column:2;grid-row:3;flex-direction:row;align-items:baseline;gap:16px;margin-top:15px}
+.dt-service .dt-price b{font-size:16px;color:#e4edfb}
+.dt-service .dt-price small{color:#8295b0}
+.dt-service>button{grid-column:3;grid-row:2/4;border-color:#435b7c;color:#a8c7f8}
+.dt-service>button:hover{background:var(--dt-accent);color:#07111e}
+.dt-about{background:#101c2c}
+.dt-about-grid>div>p{color:#b8c8dc}
+.dt-process span{border-color:#ffffff24}
+.dt-gallery figcaption{color:#aebed3}
+.dt-faq details{border-color:#ffffff28}
+.dt-faq details p{color:#aebed1}
+.dt-contact{background:#0e1929}
+.dt-contact-info p,.dt-footer{color:#9eafc7}
+.dt-footer strong{color:#e1ecff}
+.dt-dialog{background:#101c2c;border-color:#436089;color:#eff5ff}
+.dt-dialog label{color:#b9cee8}
+.dt-dialog input,.dt-dialog select,.dt-dialog textarea{background:#17263a;border-color:#3d5575;color:#f1f6ff}
+.dt-form-note,.dt-legal{color:#aebfd6}
+@container (max-width:700px){.dt-section{padding-top:68px;padding-bottom:68px}.dt-header nav{background:#0d1928}.dt-hero{min-height:650px}.dt-hero-shade{background:linear-gradient(180deg,#07101de8,#07101d60 60%,#07101de8)}.dt-service-list{grid-template-columns:1fr}.dt-service-image{aspect-ratio:1.8/1}.dt-service,.dt-service:last-child{grid-template-columns:26px minmax(0,1fr) 38px;gap:12px;padding:15px}.dt-service .dt-index{display:block;padding-top:6px}.dt-service>button{width:38px;height:38px}.dt-service .dt-price{grid-column:2;grid-row:3}.dt-service h3{font-size:20px}.dt-mobile-cta{background:#0d1928f5;border-color:#39567c}.dt-mobile-cta span{color:#b1c3dc}}

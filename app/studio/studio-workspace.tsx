@@ -87,7 +87,8 @@ export default function StudioWorkspace() {
     [creating, setCreating] = useState(false),
     [newName, setNewName] = useState(""),
     [slug, setSlug] = useState(""),
-    [orders, setOrders] = useState<DetailBooking[]>([]);
+    [orders, setOrders] = useState<DetailBooking[]>([]),
+    [inviteLink, setInviteLink] = useState("");
   const dirty =
     !!selected &&
     (JSON.stringify(config) !== JSON.stringify(selected.draft) ||
@@ -108,6 +109,7 @@ export default function StudioWorkspace() {
     setError("");
     setNotice("");
     setOrders([]);
+    setInviteLink("");
   }
   function accept(p: DetailProject) {
     setProjects((v) => [p, ...v.filter((x) => x.id !== p.id)]);
@@ -649,6 +651,15 @@ export default function StudioWorkspace() {
                             }
                           />
                         </Field>
+                        {s.image && <img className="ds-image-preview" src={s.image} alt={`Фото услуги ${s.name}`} />}
+                        <label className="ds-upload">
+                          <ImagePlus size={15} />
+                          {s.image ? "Заменить фото услуги" : "Добавить фото услуги"}
+                          <input type="file" accept="image/jpeg,image/png,image/webp" disabled={busy}
+                            onChange={(e) => upload(e.target.files?.[0], (url) =>
+                              set("services", config.services.map((x, j) => j === i ? { ...x, image: url } : x)))} />
+                        </label>
+                        {s.image && <button className="ds-btn" onClick={() => set("services", config.services.map((x, j) => j === i ? { ...x, image: "" } : x))}>Убрать фото</button>}
                         <div className="ds-fields-row">
                           <Field label="Цена от, ₽">
                             <input
@@ -702,6 +713,7 @@ export default function StudioWorkspace() {
                             id: crypto.randomUUID(),
                             name: "Новая услуга",
                             description: "",
+                            image: "",
                             price: 0,
                             duration: 60,
                           },
@@ -1016,6 +1028,21 @@ export default function StudioWorkspace() {
                           </button>
                         </>
                       )}
+                    </div>
+                    <div className="ds-launch-card">
+                      <span className="ds-kicker">КАБИНЕТ КЛИЕНТА</span>
+                      <p className="ds-hint">После публикации выдайте отдельный доступ. Клиент задаст свой пароль и сможет менять услуги, цены, фото, тексты, расписание и заявки без доступа к вашей студии.</p>
+                      <button className="ds-btn" disabled={busy || !selected.publishedVersion} onClick={() => void run(async () => {
+                        const response = await fetch("/api/client?action=invite", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId: selected.id }) });
+                        const data = await response.json();
+                        if (!response.ok) throw new Error(data.error);
+                        setInviteLink(window.location.origin + data.path);
+                        setNotice("Приглашение создано. Скопируйте ссылку ниже — она действует 7 дней и открывается один раз.");
+                      })}>
+                        <Copy size={15} /> Создать приглашение
+                      </button>
+                      {inviteLink && <div className="ds-invite"><input readOnly aria-label="Ссылка приглашения" value={inviteLink} /><button className="ds-btn" onClick={() => void navigator.clipboard.writeText(inviteLink).then(() => setNotice("Приглашение скопировано"))}>Скопировать</button></div>}
+                      {selected.publishedVersion && <a className="ds-btn" href={`/client/${selected.slug}`} target="_blank" rel="noreferrer">Открыть вход клиента <ExternalLink size={14} /></a>}
                     </div>
                   </>
                 )}

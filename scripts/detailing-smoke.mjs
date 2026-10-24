@@ -271,6 +271,44 @@ try {
       201,
     )
   ).project;
+  const inviteResponse = await fetch(origin + "/api/client?action=invite", {
+    method: "POST", headers: { "content-type": "application/json", origin, cookie: cookies },
+    body: JSON.stringify({ projectId: p.id }),
+  });
+  assert.equal(inviteResponse.status, 201);
+  const invite = (await inviteResponse.json()).invite;
+  let clientCookies = "";
+  async function client(action, method = "GET", payload, expected = 200, useCookie = true) {
+    const response = await fetch(origin + "/api/client?action=" + action, {
+      method,
+      headers: { "content-type": "application/json", origin, ...(useCookie && clientCookies ? { cookie: clientCookies } : {}) },
+      ...(payload === undefined ? {} : { body: JSON.stringify(payload) }),
+    });
+    const result = await response.json();
+    assert.equal(response.status, expected, JSON.stringify(result));
+    return { result, response };
+  }
+  await client("project", "GET", undefined, 401, false);
+  await client("activate", "POST", { slug: p.slug, invite, password: "short" }, 400, false);
+  const activated = await client("activate", "POST", { slug: p.slug, invite, password: "strong-qa-password-2026" }, 200, false);
+  clientCookies = activated.response.headers.getSetCookie().map((v) => v.split(";")[0]).join("; ");
+  await client("activate", "POST", { slug: p.slug, invite, password: "strong-qa-password-2026" }, 409, false);
+  const clientProject = (await client("project")).result.project;
+  assert.equal(clientProject.id, p.id);
+  assert.equal(clientProject.references, undefined);
+  const changed = { ...clientProject.draft, headline: "Client managed headline", services: clientProject.draft.services.map((s,i) => i === 0 ? { ...s, price: 4400, image: asset } : s) };
+  const saved = (await client("project", "PATCH", { version: clientProject.version, config: changed })).result.project;
+  await client("project", "PATCH", { version: clientProject.version, config: changed }, 409);
+  assert.ok(!(await (await fetch(origin + "/s/" + p.slug)).text()).includes("Client managed headline"));
+  await client("publish", "POST", { version: saved.version });
+  assert.ok((await (await fetch(origin + "/s/" + p.slug)).text()).includes("Client managed headline"));
+  assert.equal((await client("bookings")).result.bookings.length, 1);
+  await client("bookings", "PATCH", { id: "other-project-booking", status: "cancelled" }, 404);
+  await client("session", "DELETE");
+  await client("project", "GET", undefined, 401);
+  const logged = await client("login", "POST", { slug: p.slug, password: "strong-qa-password-2026" }, 200, false);
+  clientCookies = logged.response.headers.getSetCookie().map((v) => v.split(";")[0]).join("; ");
+  assert.equal((await client("project")).result.project.publishedVersion, saved.version);
   await api(
     `projects/${other.id}/bookings`,
     "PATCH",
@@ -282,10 +320,7 @@ try {
   await start();
   assert.equal((await fetch(origin+asset)).status,200);
   assert.equal((await api(`projects/${p.id}/bookings`)).bookings.length, 1);
-  assert.equal(
-    (await api(`projects/${p.id}`)).project.publishedVersion,
-    p.version,
-  );
+  assert.equal((await api(`projects/${p.id}`)).project.publishedVersion, saved.version);
   await api(`projects/${p.id}/bookings`, "PATCH", {
     id: b.id,
     status: "cancelled",
@@ -310,7 +345,7 @@ try {
   await api(`projects/${p.id}/unpublish`, "POST", {});
   assert.equal((await fetch(origin + "/s/" + p.slug)).status, 404);
   console.log(
-    "PASS: auth, origin, immutable approval, stale edits, publication, concurrent booking, project isolation, restart persistence, cancellation, unpublish.",
+    "PASS: agency auth, approval, publication, client invite/login/isolation/content publishing, bookings, restart persistence, cancellation, unpublish.",
   );
   console.log("QA fixture:", dir);
   if (process.argv.includes("--keep")) {

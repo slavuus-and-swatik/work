@@ -17,6 +17,8 @@ import {
   Menu,
 } from "lucide-react";
 import { money, type DetailConfig } from "@/lib/detailing/model";
+import { PhotoProvider, PhotoView } from "react-photo-view";
+import "react-photo-view/dist/react-photo-view.css";
 import "./site.css";
 
 export default function DetailingSite({
@@ -215,6 +217,7 @@ export default function DetailingSite({
                 <span className="dt-index">
                   {String(i + 1).padStart(2, "0")}
                 </span>
+                {s.image && <img className="dt-service-image" src={s.image} alt={s.name} loading="lazy" />}
                 <div>
                   <h3>{s.name}</h3>
                   <p>{s.description}</p>
@@ -249,14 +252,16 @@ export default function DetailingSite({
                 </h2>
               </div>
             </div>
-            <div className="dt-gallery">
-              {c.gallery.map((g, i) => (
-                <figure key={i}>
-                  <img loading="lazy" src={g.image} alt={g.caption} />
-                  <figcaption>{g.caption}</figcaption>
-                </figure>
-              ))}
-            </div>
+            <PhotoProvider maskOpacity={0.95}>
+              <div className="dt-gallery">
+                {c.gallery.map((g, i) => (
+                  <figure key={i}>
+                    <PhotoView src={g.image}><button className="dt-gallery-open" aria-label={`Открыть фото: ${g.caption}`}><img loading="lazy" src={g.image} alt={g.caption} /></button></PhotoView>
+                    <figcaption>{g.caption}</figcaption>
+                  </figure>
+                ))}
+              </div>
+            </PhotoProvider>
           </section>
         )}
         <section className="dt-about dt-section" id="about">

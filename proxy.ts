@@ -10,11 +10,14 @@ export function proxy(request: NextRequest) {
     path === '/studio' ||
     path.startsWith('/studio/') ||
     path.startsWith('/review/') ||
+    path.startsWith('/client/') ||
+    path === '/api/client' ||
     path.startsWith('/s/') ||
     path.startsWith('/api/detailing/') ||
     path === '/api/platform-admin/session' ||
     path.startsWith('/_next/static/') ||
     path === '/detailing-hero.png' ||
+    path.startsWith('/detailing-services/') ||
     path === '/favicon.svg' ||
     path === '/apple-touch-icon.png'
   ) {

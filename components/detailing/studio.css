@@ -889,3 +889,37 @@
     font-size: 26px;
   }
 }
+
+/* FORMA / studio palette */
+.ds{--ds-accent:#79a4f5;color:#edf3fb;background:#0b111b}
+.ds-wordmark span,.ds-kicker,.ds-sidebar-caption,.ds-breadcrumb,.ds-project-list small,.ds-sidebar-bottom{color:#8fa6c5}
+.ds-kicker{letter-spacing:.18em}
+.ds-btn{background:#18283d;border-color:#405572;border-radius:2px;color:#eaf2ff}
+.ds-btn.primary{color:#071321}
+.ds-field{color:#b4c5db}
+.ds input:not([type="checkbox"]):not([type="color"]):not([type="file"]),.ds textarea,.ds select{background:#111e2e;border-color:#334a68;color:#eaf2ff;border-radius:2px}
+.ds input:focus,.ds textarea:focus,.ds select:focus{border-color:#79a4f5!important}
+.ds-sidebar{background:#090f18;border-color:#26364d}
+.ds-nav{background:#172940;border-color:#385b85;color:#dceaff!important;border-radius:2px}
+.ds-nav span{color:#9cc0fa}
+.ds-project-list>button.selected{background:#19283d}
+.ds-project-avatar{border-color:#415977}
+.ds-online{background:#79a4f5}
+.ds-toolbar{background:#0f1928;border-color:#26364d}
+.ds-flow{background:#101b2b!important;border-color:#26364d!important}
+.ds-canvas-scroll{background-color:#0e1724;background-image:radial-gradient(#6c8fb52a 1px,transparent 1px)}
+.ds-canvas,.ds-empty-preview{border-color:#3b5373}
+.ds-inspector{background:#111e2e;border-color:#2c425f}
+.ds-inspector-tabs{border-color:#2c425f}
+.ds-inspector-tabs button{color:#9caec7}
+.ds-inspector-tabs button.active{background:#29486f;color:#e2eeff}
+.ds-image-preview{border-color:#395574}
+.ds-upload{border-color:#597ba3;color:#d0e2fa;border-radius:2px}
+.ds-color>span,.ds-row>b{color:#cadcf4}
+.ds-edit-card{background:#17263a;border-color:#3b5371;border-radius:2px}
+.ds-days button{background:#17283d;border-color:#3f5776}
+.ds-days button.active{background:#315987;color:#e8f2ff}
+.ds-launch-card{border-color:#344d6d}
+.ds-launch-card blockquote{border-color:#79a4f5;color:#b7cce8}
+.ds-modal{background:#15243a;border-color:#43638e}
+.ds-invite{display:grid;gap:9px;margin-top:12px}

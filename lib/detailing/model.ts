@@ -37,6 +37,7 @@ export const detailConfigSchema = z
           id: z.string().regex(/^[a-zA-Z0-9_-]{1,50}$/),
           name: text(80).min(2),
           description: text(350),
+          image: z.union([image, z.literal("")]).default(""),
           price: z.number().int().min(0).max(10000000),
           duration: z.number().int().min(30).max(600).multipleOf(30),
         }),
@@ -111,7 +112,7 @@ export const defaultDetailConfig: DetailConfig = {
   headline: "Искусство\nсохранять новое.",
   description:
     "Продуманный уход за каждой поверхностью. От деликатной очистки до защиты кузова — выберите то, что нужно вашему автомобилю.",
-  accent: "#c9ed72",
+  accent: "#5d8fe9",
   hero: "/detailing-hero.png",
   logo: "",
   phone: "",
@@ -128,6 +129,7 @@ export const defaultDetailConfig: DetailConfig = {
       name: "Детейлинг-мойка",
       description:
         "Бережная очистка кузова, дисков и труднодоступных мест. Для регулярного ухода.",
+      image: "/detailing-services/wash.jpg",
       price: 3500,
       duration: 90,
     },
@@ -136,6 +138,7 @@ export const defaultDetailConfig: DetailConfig = {
       name: "Полировка кузова",
       description:
         "Восстановление глубины цвета и блеска. Объём работ определим после осмотра.",
+      image: "/detailing-services/polish.jpg",
       price: 18000,
       duration: 240,
     },
@@ -144,6 +147,7 @@ export const defaultDetailConfig: DetailConfig = {
       name: "Керамическая защита",
       description:
         "Защитное покрытие для лакокрасочной поверхности. Состав подбирается под автомобиль.",
+      image: "/detailing-services/ceramic.jpg",
       price: 25000,
       duration: 300,
     },
@@ -152,6 +156,7 @@ export const defaultDetailConfig: DetailConfig = {
       name: "Уход за салоном",
       description:
         "Деликатная очистка ткани, кожи и пластика с учётом особенностей материалов.",
+      image: "/detailing-services/interior.jpg",
       price: 12000,
       duration: 180,
     },
