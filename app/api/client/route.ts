@@ -1,3 +1,5 @@
+import * as telegram from "@/lib/detailing/telegram";
+import { rateLimit } from "@/lib/detailing/db";
 import { ZodError, z } from "zod";
 import { isPlatformAdmin } from "@/lib/platform-auth";
 import { bookingMutationSchema } from "@/lib/detailing/model";
@@ -73,6 +75,24 @@ async function handle(req: Request) {
       );
     }
     const id = requireClient(req);
+    if (action === "telegram" && req.method === "GET")
+      return json(telegram.telegramStatus(id));
+    if (action.startsWith("telegram-") && req.method === "POST") {
+      if (!rateLimit(`telegram:${id}`, 30, 3600))
+        throw new store.DetailError(
+          "Слишком много проверок Telegram. Попробуйте позже.",
+          429,
+        );
+      if (action === "telegram-chats")
+        return json(await telegram.telegramChats(await input(req)));
+      if (action === "telegram-connect")
+        return json(await telegram.connectTelegram(id, await input(req)));
+      if (action === "telegram-disconnect")
+        return json(telegram.disconnectTelegram(id));
+      if (action === "telegram-test")
+        return json(await telegram.testTelegram(id));
+      if (action === "telegram-retry") return json(telegram.retryTelegram(id));
+    }
     if (action === "project" && req.method === "GET") {
       const p = store.project(id);
       return json({

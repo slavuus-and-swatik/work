@@ -13,14 +13,9 @@ import {
   type BookingEvent,
 } from "./model";
 
-export class DetailError extends Error {
-  constructor(
-    message: string,
-    public status = 400,
-  ) {
-    super(message);
-  }
-}
+import { DetailError } from "./errors";
+export { DetailError } from "./errors";
+import { queueTelegramBooking } from "./telegram";
 function decode<T>(row: unknown): T | null {
   return row ? (JSON.parse((row as { data: string }).data) as T) : null;
 }
@@ -403,11 +398,15 @@ export function createBooking(slug: string, input: unknown, sandbox = false) {
     const site = liveSite(slug);
     if (site.config.demo && !sandbox)
       throw new DetailError(
-        "Это демонстрационный сайт. Приём заявок отключён.",
+        "Сайт обновлён. Обновите страницу и откройте форму записи заново.",
+        409,
+        "SITE_UPDATED",
       );
     if (sandbox && !site.config.demo)
       throw new DetailError(
-        "Тестовая запись доступна только на демонстрационном сайте",
+        "Сайт обновлён. Обновите страницу и откройте форму записи заново.",
+        409,
+        "SITE_UPDATED",
       );
     const tokenHash = v.submissionToken
       ? createHash("sha256").update(v.submissionToken).digest("hex")
@@ -472,6 +471,7 @@ export function createBooking(slug: string, input: unknown, sandbox = false) {
       .prepare("INSERT INTO detail_bookings VALUES(?,?,?,?)")
       .run(booking.id, site.projectId, booking.date, JSON.stringify(booking));
     recordBookingEvent(booking, "visitor", "created");
+    queueTelegramBooking(booking);
     if (tokenHash)
       db()
         .prepare("INSERT INTO detail_booking_receipts VALUES(?,?,?,?)")

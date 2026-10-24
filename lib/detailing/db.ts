@@ -22,6 +22,10 @@ export function db() {
     CREATE TABLE IF NOT EXISTS detail_booking_events(id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES detail_projects(id), booking_id TEXT NOT NULL REFERENCES detail_bookings(id), data TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS detail_booking_events_lookup ON detail_booking_events(project_id,booking_id);
     CREATE TABLE IF NOT EXISTS detail_booking_receipts(project_id TEXT NOT NULL REFERENCES detail_projects(id), token_hash TEXT NOT NULL, payload_hash TEXT NOT NULL, booking_id TEXT NOT NULL REFERENCES detail_bookings(id), PRIMARY KEY(project_id,token_hash));
+    CREATE TABLE IF NOT EXISTS detail_telegram_connections(project_id TEXT PRIMARY KEY REFERENCES detail_projects(id), data TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS detail_notification_outbox(id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES detail_projects(id), booking_id TEXT NOT NULL REFERENCES detail_bookings(id), revision TEXT NOT NULL, state TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, next_at INTEGER NOT NULL, lease_until INTEGER NOT NULL DEFAULT 0, last_error TEXT, created_at TEXT NOT NULL, sent_at TEXT, message_id INTEGER, UNIQUE(booking_id,revision));
+    CREATE INDEX IF NOT EXISTS detail_notification_due ON detail_notification_outbox(state,next_at,lease_until);
+    CREATE INDEX IF NOT EXISTS detail_notification_project ON detail_notification_outbox(project_id,created_at);
     CREATE TABLE IF NOT EXISTS detail_health(id INTEGER PRIMARY KEY CHECK(id=1), checked_at INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS detail_limits(key TEXT PRIMARY KEY, count INTEGER NOT NULL, until INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS detail_assets(id TEXT PRIMARY KEY, type TEXT NOT NULL, bytes BLOB NOT NULL);

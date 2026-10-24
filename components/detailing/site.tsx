@@ -37,7 +37,7 @@ const receiptStatus: Record<string, string> = {
 };
 
 export default function DetailingSite({
-  config: c,
+  config: initialConfig,
   slug,
   preview = false,
 }: {
@@ -45,6 +45,36 @@ export default function DetailingSite({
   slug?: string;
   preview?: boolean;
 }) {
+  const [c, setConfig] = useState(initialConfig);
+  useEffect(() => setConfig(initialConfig), [initialConfig]);
+  async function latestConfig() {
+    if (preview || !slug) return c;
+    const r = await fetch(`/api/detailing/sites/${slug}/config`, {
+      signal: AbortSignal.timeout(10000),
+      cache: "no-store",
+    });
+    const v = await r.json();
+    if (!r.ok) throw new Error(v.error || "Не удалось обновить сайт");
+    setConfig((old) =>
+      JSON.stringify(old) === JSON.stringify(v.config) ? old : v.config,
+    );
+    return v.config as DetailConfig;
+  }
+  useEffect(() => {
+    if (preview || !slug) return;
+    const refresh = () => {
+      if (!document.hidden) void latestConfig().catch(() => {});
+    };
+    refresh();
+    window.addEventListener("focus", refresh);
+    window.addEventListener("pageshow", refresh);
+    const timer = setInterval(refresh, 30000);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("pageshow", refresh);
+      clearInterval(timer);
+    };
+  }, [preview, slug]);
   const [selected, setSelected] = useState("");
   const [menu, setMenu] = useState(false);
   const [date, setDate] = useState("");
@@ -64,6 +94,7 @@ export default function DetailingSite({
   const submission = useRef<{
     token: string;
     payload: Record<string, unknown>;
+    kind: "bookings" | "demo-bookings";
   } | null>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const socialLinks = [
@@ -230,8 +261,26 @@ export default function DetailingSite({
       current = false;
       clearInterval(timer);
     };
-  }, [selected, date, disabled, slug]);
+  }, [
+    selected,
+    date,
+    disabled,
+    slug,
+    c.demo,
+    c.services,
+    c.openHour,
+    c.closeHour,
+    c.capacity,
+    c.workDays,
+  ]);
   function open(id?: string) {
+    if (!preview && slug)
+      void latestConfig()
+        .then((next) => {
+          if (!next.services.some((s) => s.id === (id || c.services[0].id)))
+            setSelected(next.services[0].id);
+        })
+        .catch(() => setError("Не удалось обновить форму. Обновите страницу."));
     setSuccess("");
     setError("");
     if (uncertain && submission.current) {
@@ -250,9 +299,35 @@ export default function DetailingSite({
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (disabled || busy) return;
+    const f = new FormData(e.currentTarget);
     setBusy(true);
     setError("");
-    const f = new FormData(e.currentTarget);
+    if (!submission.current && !preview && slug) {
+      try {
+        const next = await latestConfig();
+        const currentService = next.services.find((s) => s.id === selected);
+        if (
+          next.demo !== c.demo ||
+          !currentService ||
+          currentService.price !== service?.price ||
+          currentService.duration !== service?.duration
+        ) {
+          if (!currentService) setSelected(next.services[0].id);
+          setTime("");
+          setError(
+            "Сайт обновлён. Проверьте услугу, дату и время перед отправкой.",
+          );
+          setBusy(false);
+          return;
+        }
+      } catch {
+        setError(
+          "Не удалось обновить форму. Заявка не отправлена. Попробуйте ещё раз.",
+        );
+        setBusy(false);
+        return;
+      }
+    }
     let pending = submission.current;
     if (!pending) {
       const token =
@@ -263,6 +338,7 @@ export default function DetailingSite({
             ).join("");
       pending = {
         token,
+        kind: sandbox ? "demo-bookings" : "bookings",
         payload: {
           serviceId: selected,
           date,
@@ -294,15 +370,12 @@ export default function DetailingSite({
       } catch {}
     }
     try {
-      const r = await fetch(
-        `/api/detailing/sites/${slug}/${sandbox ? "demo-bookings" : "bookings"}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(pending.payload),
-          signal: AbortSignal.timeout(15000),
-        },
-      );
+      const r = await fetch(`/api/detailing/sites/${slug}/${pending.kind}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(pending.payload),
+        signal: AbortSignal.timeout(15000),
+      });
       const v = await r.json();
       if (!r.ok) {
         const saved = await readReceipt(pending.token);

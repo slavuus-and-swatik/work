@@ -137,6 +137,10 @@ async function handle(req: Request, ctx: Context) {
         return json({ review });
       }
     }
+    if (scope === "sites" && id && action === "config" && method === "GET") {
+      const site = store.liveSite(id);
+      return json({ config: site.config, version: site.version });
+    }
     if (scope === "sites" && id && action === "slots" && method === "GET")
       return json({
         slots: store.availableSlots(
@@ -217,7 +221,7 @@ async function handle(req: Request, ctx: Context) {
     return json({ error: "Страница не найдена" }, 404);
   } catch (error) {
     if (error instanceof store.DetailError)
-      return json({ error: error.message }, error.status);
+      return json({ error: error.message, code: error.code }, error.status);
     if (error instanceof ZodError)
       return json(
         {

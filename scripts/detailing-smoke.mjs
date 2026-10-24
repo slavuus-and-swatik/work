@@ -165,7 +165,7 @@ try {
       website: "",
     },
     false,
-    400,
+    409,
   );
   const demoDate = new Date(Date.now() + 86400000 * 3)
     .toISOString()
@@ -663,7 +663,7 @@ try {
       submissionToken: randomBytes(32).toString("hex"),
     },
     false,
-    400,
+    409,
   );
   const inviteResponse = await fetch(origin + "/api/client?action=invite", {
     method: "POST",
