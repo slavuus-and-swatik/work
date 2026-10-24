@@ -75,6 +75,11 @@ async function req(
 const api = (p, ...args) => req("/api/detailing/" + p, ...args);
 try {
   await start();
+  const home = await fetch(origin + '/', { redirect: 'manual' });
+  assert.equal(home.status, 307);
+  assert.equal(new URL(home.headers.get('location'), origin).pathname, '/studio');
+  assert.equal((await fetch(origin + '/api/download-source')).status, 404);
+  assert.equal((await fetch(origin + '/admin')).status, 404);
   await api("projects", "GET", undefined, false, 401);
   await req("/api/platform-admin/session", "POST", { password }, false, 403, {
     origin: "https://evil.invalid",

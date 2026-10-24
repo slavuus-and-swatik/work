@@ -1,0 +1,8 @@
+node_modules
+.next
+.git
+data
+backups
+*.sqlite*
+.env*
+public/project-source.zip
