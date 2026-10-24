@@ -47,3 +47,8 @@ next-env.d.ts
 /work/
 
 *.tsbuildinfo
+
+# Persistent runtime data and backups
+/data/
+*.sqlite*
+/backups/

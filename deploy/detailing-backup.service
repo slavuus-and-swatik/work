@@ -1,0 +1,8 @@
+[Unit]
+Description=Back up FORMA Studio SQLite
+[Service]
+Type=oneshot
+User=detailing
+Group=detailing
+UMask=0077
+ExecStart=/usr/bin/python3 /opt/detailing/current/deploy/backup.py

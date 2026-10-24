@@ -6,7 +6,14 @@ export async function GET(request: Request) {
   return json({ authenticated: isPlatformAdmin(request) });
 }
 
+function sameOrigin(request: Request) {
+  const origin = request.headers.get('origin');
+  return !origin || origin === (process.env.APP_ORIGIN || new URL(request.url).origin);
+}
+
 export async function POST(request: Request) {
+  if (!sameOrigin(request)) return json({ error: 'Недопустимый источник запроса' }, 403);
+  if (Number(request.headers.get('content-length') || 0) > 4096) return json({ error: 'Слишком большой запрос' }, 413);
   let body: { password?: unknown };
   try { body = await request.json(); } catch { return json({ error: 'Некорректный запрос' }, 400); }
   const result = await loginPlatformAdmin(request, body.password);
@@ -25,6 +32,7 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  if (!sameOrigin(request)) return json({ error: 'Недопустимый источник запроса' }, 403);
   const response = NextResponse.json({ authenticated: false }, { headers: { 'Cache-Control': 'no-store' } });
   clearPlatformAdminCookies(request).forEach((value) => response.headers.append('Set-Cookie', value));
   return response;

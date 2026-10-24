@@ -1,5 +1,6 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { compare } from 'bcryptjs';
+import { rateLimit } from './detailing/db';
 
 const SESSION_COOKIE = 'platform_ops_session';
 const DEVICE_COOKIE = 'platform_ops_device';
@@ -20,7 +21,7 @@ function keys(request: Request, device: string) {
   const ip = request.headers.get('x-real-ip')?.trim() || request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
   return [`ip:${ip}`, ...(device ? [`device:${device}`] : [])];
 }
-function secure(request: Request) { return new URL(request.url).protocol === 'https:' ? '; Secure' : ''; }
+function secure(request: Request) { return new URL(process.env.APP_ORIGIN || request.url).protocol === 'https:' ? '; Secure' : ''; }
 
 export function isPlatformAdmin(request: Request) {
   if (!secret()) return false;
@@ -42,6 +43,7 @@ export async function loginPlatformAdmin(request: Request, password: unknown) {
   const now = Date.now();
   const locked = lockKeys.map((key) => attempts.get(key)).find((state) => state?.blockedUntil && state.blockedUntil > now);
   if (locked) return { ok: false as const, blockedForSeconds: Math.ceil(((locked.blockedUntil || now) - now) / 1000) };
+  if (!rateLimit('login:' + lockKeys[0], 12, 3600)) return { ok: false as const, blockedForSeconds: LOCK_SECONDS };
   const valid = typeof password === 'string' && password.length === 32 && await compare(password, hash).catch(() => false);
   if (valid) {
     lockKeys.forEach((key) => attempts.delete(key));

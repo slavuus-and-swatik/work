@@ -1,0 +1,25 @@
+[Unit]
+Description=FORMA Detailing Studio
+After=network.target
+
+[Service]
+Type=simple
+User=detailing
+Group=detailing
+WorkingDirectory=/opt/detailing/current
+Environment=NODE_ENV=production
+Environment=PORT=3017
+Environment=HOSTNAME=127.0.0.1
+EnvironmentFile=/etc/detailing.env
+ExecStart=/usr/bin/node server.js
+Restart=on-failure
+RestartSec=3
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/detailing
+
+[Install]
+WantedBy=multi-user.target
