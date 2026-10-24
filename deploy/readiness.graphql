@@ -1,0 +1,7 @@
+mutation ConfigureReadiness($serviceId: String!, $environmentId: String!) {
+  serviceInstanceUpdate(
+    serviceId: $serviceId
+    environmentId: $environmentId
+    input: { healthcheckPath: "/api/health", healthcheckTimeout: 120 }
+  )
+}

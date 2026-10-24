@@ -278,7 +278,7 @@ try {
   let bookings = (await api(`projects/${p.id}/bookings`)).bookings;
   assert.equal(bookings.length, 1);
   const b = bookings[0];
-  const other = (
+  let other = (
     await api(
       "projects",
       "POST",
@@ -287,6 +287,19 @@ try {
       201,
     )
   ).project;
+  async function launchOther(capacity) {
+    other = (await api(`projects/${other.id}`, "PATCH", { version: other.version, clientName: other.clientName, references: [], config: { ...p.draft, capacity } })).project;
+    other = (await api(`projects/${other.id}/review`, "POST", {version:other.version})).project;
+    await api(`reviews/${other.reviewToken}`, "POST", {decision:"approved"}, false);
+    other = (await api(`projects/${other.id}/publish`, "POST", {version:other.version})).project;
+  }
+  await launchOther(2);
+  const bayOne = (await api(`sites/${other.slug}/bookings`, "POST", booking, false, 201)).booking;
+  await api(`sites/${other.slug}/bookings`, "POST", booking, false, 201);
+  await api(`projects/${other.id}/bookings`, "PATCH", {id:bayOne.id,status:"cancelled"});
+  await launchOther(1);
+  const reduced = (await api(`sites/${other.slug}/slots?service=${service}&date=${date}`, "GET", undefined, false)).slots;
+  assert.ok(!reduced.includes(booking.time), "A booking on a former bay still consumes reduced capacity");
   const inviteResponse = await fetch(origin + "/api/client?action=invite", {
     method: "POST", headers: { "content-type": "application/json", origin, cookie: cookies },
     body: JSON.stringify({ projectId: p.id }),
@@ -348,7 +361,7 @@ try {
   assert.notEqual(refusedOverwrite.status, 0);
   const restoredDb = new DatabaseSync(join(restoredDir, "studio.sqlite"), {readOnly:true});
   assert.equal(restoredDb.prepare("PRAGMA integrity_check").get().integrity_check, "ok");
-  assert.equal(restoredDb.prepare("SELECT COUNT(*) AS total FROM detail_bookings").get().total, 1);
+  assert.equal(restoredDb.prepare("SELECT COUNT(*) AS total FROM detail_bookings WHERE project_id=?").get(p.id).total, 1);
   restoredDb.close();
   await stop();
   env.DETAILING_DATA_DIR = restoredDir;

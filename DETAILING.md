@@ -28,6 +28,8 @@ SQLite в режиме WAL хранит проекты, снимки, запис
 
 Задать переменные `APP_ORIGIN`, `PLATFORM_AUTH_SECRET`, `PLATFORM_ADMIN_PASSWORD_HASH_B64` из раздела ниже. `APP_ORIGIN` должен совпадать с выданным Railway HTTPS-доменом. После деплоя проверить `/studio`, сохранение проекта, клиентскую ссылку и публикацию демо-сайта. Рабочий сайт запускать после подстановки согласованных материалов и юридического текста клиента.
 
+Проверка готовности задаётся явно в настройках сервиса: `/api/health`, timeout 120 секунд. Для CLI есть `deploy/readiness.graphql`: `railway api --file deploy/readiness.graphql --var serviceId=SERVICE_ID --var environmentId=ENVIRONMENT_ID`. После настройки выполнить новый деплой и проверить `meta.serviceManifest.deploy.healthcheckPath` в `railway deployment list --json`: одного успешного HTTP-запроса к endpoint недостаточно, чтобы считать его включённым в Railway.
+
 ### Собственный VPS
 
 Node.js 24+, pnpm, переменные окружения:

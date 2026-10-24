@@ -306,6 +306,12 @@ function slotData(
     const time = `${String(Math.floor(start / 60)).padStart(2, "0")}:${String(start % 60).padStart(2, "0")}`;
     if (new Date(`${date}T${time}:00+03:00`).getTime() < Date.now() + 3600000)
       continue;
+    const overlapping = existing.filter((b) => {
+      const [h, m] = b.time.split(":").map(Number);
+      return start < h * 60 + m + b.duration && start + service.duration > h * 60 + m;
+    });
+    // A capacity reduction must also count bookings assigned to former bays.
+    if (overlapping.length >= site.config.capacity) continue;
     for (let bay = 1; bay <= site.config.capacity; bay++) {
       if (
         !existing.some((b) => {
