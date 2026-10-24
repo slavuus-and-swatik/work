@@ -48,7 +48,11 @@ async function stop() {
   if (child?.exitCode === null) {
     const done = new Promise((r) => child.once("exit", r));
     child.kill("SIGTERM");
+    // Next may drain an unconsumed streaming response indefinitely. This is an
+    // isolated fixture process; also exercise recovery after an abrupt stop.
+    const force = setTimeout(() => child.kill("SIGKILL"), 5000);
     await done;
+    clearTimeout(force);
   }
 }
 async function req(
@@ -78,11 +82,14 @@ try {
   await start();
   assert.equal((await fetch(origin + "/api/health")).status, 200);
   assert.equal((await fetch(origin + "/api/operations")).status, 401);
-  const home = await fetch(origin + '/', { redirect: 'manual' });
+  const home = await fetch(origin + "/", { redirect: "manual" });
   assert.equal(home.status, 307);
-  assert.equal(new URL(home.headers.get('location'), origin).pathname, '/studio');
-  assert.equal((await fetch(origin + '/api/download-source')).status, 404);
-  assert.equal((await fetch(origin + '/admin')).status, 404);
+  assert.equal(
+    new URL(home.headers.get("location"), origin).pathname,
+    "/studio",
+  );
+  assert.equal((await fetch(origin + "/api/download-source")).status, 404);
+  assert.equal((await fetch(origin + "/admin")).status, 404);
   await api("projects", "GET", undefined, false, 401);
   await req("/api/platform-admin/session", "POST", { password }, false, 403, {
     origin: "https://evil.invalid",
@@ -98,13 +105,23 @@ try {
     .map((v) => v.split(";")[0])
     .join("; ");
   const upload = new FormData();
-  upload.append('file', new Blob([readFileSync('public/detailing-hero.png')], {type:'image/png'}), 'cover.png');
-  const uploaded = await fetch(origin+'/api/detailing/upload', {method:'POST', headers:{origin,cookie:cookies},body:upload});
-  assert.equal(uploaded.status,201);
+  upload.append(
+    "file",
+    new Blob([readFileSync("public/detailing-hero.png")], {
+      type: "image/png",
+    }),
+    "cover.png",
+  );
+  const uploaded = await fetch(origin + "/api/detailing/upload", {
+    method: "POST",
+    headers: { origin, cookie: cookies },
+    body: upload,
+  });
+  assert.equal(uploaded.status, 201);
   const asset = (await uploaded.json()).url;
-  const photo = await fetch(origin+asset);
-  assert.equal(photo.headers.get('content-type'),'image/png');
-  assert.ok((await photo.arrayBuffer()).byteLength>1000);
+  const photo = await fetch(origin + asset);
+  assert.equal(photo.headers.get("content-type"), "image/png");
+  assert.ok((await photo.arrayBuffer()).byteLength > 1000);
   let p = (
     await api(
       "projects",
@@ -150,6 +167,43 @@ try {
     false,
     400,
   );
+  const demoDate = new Date(Date.now() + 86400000 * 3)
+    .toISOString()
+    .slice(0, 10);
+  const demoSlots = (
+    await api(
+      `sites/${p.slug}/slots?service=${p.draft.services[0].id}&date=${demoDate}`,
+      "GET",
+      undefined,
+      false,
+    )
+  ).slots;
+  const demo = (
+    await api(
+      `sites/${p.slug}/demo-bookings`,
+      "POST",
+      {
+        serviceId: p.draft.services[0].id,
+        date: demoDate,
+        time: demoSlots[0],
+        submissionToken: randomBytes(32).toString("hex"),
+        name: "Ignore me",
+        phone: "79991234567",
+      },
+      false,
+      201,
+    )
+  ).booking;
+  assert.equal(demo.sandbox, true);
+  const demoPrivate = (await api(`projects/${p.id}/bookings`)).bookings.find(
+    (b) => b.id === demo.id,
+  );
+  assert.equal(demoPrivate.phone, "70000000000");
+  assert.equal(demoPrivate.name, "Тестовая заявка");
+  await api(`projects/${p.id}/bookings`, "PATCH", {
+    id: demo.id,
+    status: "cancelled",
+  });
   const config = {
     ...p.draft,
     demo: false,
@@ -252,7 +306,10 @@ try {
     consent: true,
     website: "",
   };
-  const submissionTokens = [randomBytes(32).toString("hex"), randomBytes(32).toString("hex")];
+  const submissionTokens = [
+    randomBytes(32).toString("hex"),
+    randomBytes(32).toString("hex"),
+  ];
   const raced = await Promise.all(
     submissionTokens.map((submissionToken) =>
       fetch(origin + `/api/detailing/sites/${p.slug}/bookings`, {
@@ -266,18 +323,144 @@ try {
   const winner = raced.findIndex((r) => r.status === 201);
   const savedBooking = (await raced[winner].json()).booking;
   const submissionToken = submissionTokens[winner];
-  const repeated = await api(`sites/${p.slug}/bookings`, "POST", { ...booking, submissionToken }, false, 201);
+  const repeated = await api(
+    `sites/${p.slug}/bookings`,
+    "POST",
+    { ...booking, submissionToken },
+    false,
+    201,
+  );
   assert.equal(repeated.booking.id, savedBooking.id);
-  await api(`sites/${p.slug}/bookings`, "POST", { ...booking, car: "Changed payload", submissionToken }, false, 409);
-  const receipt = await api(`sites/${p.slug}/receipt`, "POST", { submissionToken }, false);
+  await api(
+    `sites/${p.slug}/bookings`,
+    "POST",
+    { ...booking, car: "Changed payload", submissionToken },
+    false,
+    409,
+  );
+  const receipt = await api(
+    `sites/${p.slug}/receipt`,
+    "POST",
+    { submissionToken },
+    false,
+  );
   assert.equal(receipt.booking.id, savedBooking.id);
   assert.equal(receipt.booking.phone, undefined);
   assert.equal(receipt.booking.name, undefined);
-  await api(`sites/${p.slug}/receipt`, "POST", { submissionToken: randomBytes(32).toString("hex") }, false, 404);
+  await api(
+    `sites/${p.slug}/receipt`,
+    "POST",
+    { submissionToken: randomBytes(32).toString("hex") },
+    false,
+    404,
+  );
   await api("sites/qa-other/receipt", "POST", { submissionToken }, false, 404);
   let bookings = (await api(`projects/${p.id}/bookings`)).bookings;
-  assert.equal(bookings.length, 1);
-  const b = bookings[0];
+  assert.equal(bookings.length, 2);
+  const b = bookings.find((x) => x.id === savedBooking.id);
+  const modify = (payload, expected = 200) =>
+    api(
+      `projects/${p.id}/bookings`,
+      "PATCH",
+      { id: b.id, ...payload },
+      true,
+      expected,
+    );
+  let updated = (
+    await modify({ action: "status", status: "confirmed", version: 1 })
+  ).booking;
+  assert.equal(updated.version, 2);
+  await modify({ action: "status", status: "cancelled", version: 1 }, 409);
+  await modify({ action: "status", status: "pending", version: 2 }, 409);
+  updated = (
+    await modify({ action: "note", note: "Internal test note", version: 2 })
+  ).booking;
+  assert.equal(
+    (await api(`sites/${p.slug}/receipt`, "POST", { submissionToken }, false))
+      .booking.staffNote,
+    undefined,
+  );
+  const moveDate = new Date(Date.now() + 86400000 * 4)
+    .toISOString()
+    .slice(0, 10);
+  const moveSlots = (
+    await api(
+      `projects/${p.id}/booking-slots?bookingId=${b.id}&date=${moveDate}`,
+    )
+  ).slots;
+  assert.ok(moveSlots.length);
+  updated = (
+    await modify({
+      action: "reschedule",
+      date: moveDate,
+      time: moveSlots[0],
+      version: updated.version,
+    })
+  ).booking;
+  assert.equal(
+    (await api(`sites/${p.slug}/receipt`, "POST", { submissionToken }, false))
+      .booking.date,
+    moveDate,
+  );
+  assert.ok(
+    (
+      await api(
+        `sites/${p.slug}/slots?service=${service}&date=${date}`,
+        "GET",
+        undefined,
+        false,
+      )
+    ).slots.includes(booking.time),
+  );
+  await modify(
+    {
+      action: "reschedule",
+      date: "2026-02-30",
+      time: moveSlots[0],
+      version: updated.version,
+    },
+    409,
+  );
+  assert.equal(
+    (await api(`projects/${p.id}/bookings`)).bookings.find((x) => x.id === b.id)
+      .date,
+    moveDate,
+  );
+  updated = (
+    await modify({
+      action: "reschedule",
+      date,
+      time: booking.time,
+      version: updated.version,
+    })
+  ).booking;
+  const history = (
+    await api(`projects/${p.id}/booking-history?bookingId=${b.id}`)
+  ).events;
+  assert.deepEqual(
+    history.map((h) => h.action),
+    ["created", "status", "note", "reschedule", "reschedule"],
+  );
+  assert.equal(history[1].actor, "agency");
+  const availability = (
+    await api(
+      `sites/${p.slug}/slots?service=${service}&date=${date}`,
+      "GET",
+      undefined,
+      false,
+    )
+  ).slots;
+  const endMinutes =
+    Number(b.time.slice(0, 2)) * 60 + Number(b.time.slice(3)) + b.duration;
+  const endTime = `${String(Math.floor(endMinutes / 60)).padStart(2, "0")}:${String(endMinutes % 60).padStart(2, "0")}`;
+  assert.ok(
+    availability.includes(endTime),
+    "Adjacent visit allowed at exact end of reserved service",
+  );
+  assert.ok(
+    !availability.includes(b.time),
+    "Pending/confirmed visit reserves full service duration",
+  );
   let other = (
     await api(
       "projects",
@@ -288,29 +471,174 @@ try {
     )
   ).project;
   async function launchOther(capacity) {
-    other = (await api(`projects/${other.id}`, "PATCH", { version: other.version, clientName: other.clientName, references: [], config: { ...p.draft, capacity } })).project;
-    other = (await api(`projects/${other.id}/review`, "POST", {version:other.version})).project;
-    await api(`reviews/${other.reviewToken}`, "POST", {decision:"approved"}, false);
-    other = (await api(`projects/${other.id}/publish`, "POST", {version:other.version})).project;
+    other = (
+      await api(`projects/${other.id}`, "PATCH", {
+        version: other.version,
+        clientName: other.clientName,
+        references: [],
+        config: { ...p.draft, capacity },
+      })
+    ).project;
+    other = (
+      await api(`projects/${other.id}/review`, "POST", {
+        version: other.version,
+      })
+    ).project;
+    await api(
+      `reviews/${other.reviewToken}`,
+      "POST",
+      { decision: "approved" },
+      false,
+    );
+    other = (
+      await api(`projects/${other.id}/publish`, "POST", {
+        version: other.version,
+      })
+    ).project;
   }
   await launchOther(2);
-  const bayOne = (await api(`sites/${other.slug}/bookings`, "POST", booking, false, 201)).booking;
+  const bayOne = (
+    await api(`sites/${other.slug}/bookings`, "POST", booking, false, 201)
+  ).booking;
   await api(`sites/${other.slug}/bookings`, "POST", booking, false, 201);
-  await api(`projects/${other.id}/bookings`, "PATCH", {id:bayOne.id,status:"cancelled"});
+  await api(`projects/${other.id}/bookings`, "PATCH", {
+    id: bayOne.id,
+    status: "cancelled",
+  });
   await launchOther(1);
-  const reduced = (await api(`sites/${other.slug}/slots?service=${service}&date=${date}`, "GET", undefined, false)).slots;
-  assert.ok(!reduced.includes(booking.time), "A booking on a former bay still consumes reduced capacity");
+  await modify(
+    {
+      action: "reschedule",
+      date,
+      time: booking.time,
+      version: updated.version - 1,
+    },
+    409,
+  );
+  await api(
+    `projects/${other.id}/booking-history?bookingId=${b.id}`,
+    "GET",
+    undefined,
+    true,
+    404,
+  );
+  const reduced = (
+    await api(
+      `sites/${other.slug}/slots?service=${service}&date=${date}`,
+      "GET",
+      undefined,
+      false,
+    )
+  ).slots;
+  assert.ok(
+    !reduced.includes(booking.time),
+    "A booking on a former bay still consumes reduced capacity",
+  );
+  // A failed move into a full bay must leave the original reservation intact.
+  const bayRemaining = (
+    await api(`projects/${other.id}/bookings`)
+  ).bookings.find((x) => x.status !== "cancelled");
+  const otherFree = (
+    await api(
+      `projects/${other.id}/booking-slots?bookingId=${bayRemaining.id}&date=${moveDate}`,
+    )
+  ).slots;
+  const secondOther = (
+    await api(
+      `sites/${other.slug}/bookings`,
+      "POST",
+      { ...booking, date: moveDate, time: otherFree[0] },
+      false,
+      201,
+    )
+  ).booking;
+  await api(
+    `projects/${other.id}/bookings`,
+    "PATCH",
+    {
+      id: secondOther.id,
+      action: "reschedule",
+      date,
+      time: booking.time,
+      version: 1,
+    },
+    true,
+    409,
+  );
+  assert.equal(
+    (await api(`projects/${other.id}/bookings`)).bookings.find(
+      (x) => x.id === secondOther.id,
+    ).date,
+    moveDate,
+  );
+  // Sequential visits on bay 1 must not falsely consume bay 2 during a longer visit.
+  await launchOther(2);
+  const sequentialDate = new Date(Date.now() + 86400000 * 5)
+    .toISOString()
+    .slice(0, 10);
+  await api(
+    `sites/${other.slug}/bookings`,
+    "POST",
+    { ...booking, date: sequentialDate, time: booking.time },
+    false,
+    201,
+  );
+  await api(
+    `sites/${other.slug}/bookings`,
+    "POST",
+    { ...booking, date: sequentialDate, time: endTime },
+    false,
+    201,
+  );
+  const longService = p.draft.services.find(
+    (s) => s.duration >= b.duration * 2,
+  );
+  assert.ok(longService);
+  assert.ok(
+    (
+      await api(
+        `sites/${other.slug}/slots?service=${longService.id}&date=${sequentialDate}`,
+        "GET",
+        undefined,
+        false,
+      )
+    ).slots.includes(booking.time),
+    "Long service can use one free physical bay across sequential visits on another bay",
+  );
+  await api(
+    `sites/${p.slug}/demo-bookings`,
+    "POST",
+    {
+      serviceId: service,
+      date,
+      time: booking.time,
+      submissionToken: randomBytes(32).toString("hex"),
+    },
+    false,
+    400,
+  );
   const inviteResponse = await fetch(origin + "/api/client?action=invite", {
-    method: "POST", headers: { "content-type": "application/json", origin, cookie: cookies },
+    method: "POST",
+    headers: { "content-type": "application/json", origin, cookie: cookies },
     body: JSON.stringify({ projectId: p.id }),
   });
   assert.equal(inviteResponse.status, 201);
   const invite = (await inviteResponse.json()).invite;
   let clientCookies = "";
-  async function client(action, method = "GET", payload, expected = 200, useCookie = true) {
+  async function client(
+    action,
+    method = "GET",
+    payload,
+    expected = 200,
+    useCookie = true,
+  ) {
     const response = await fetch(origin + "/api/client?action=" + action, {
       method,
-      headers: { "content-type": "application/json", origin, ...(useCookie && clientCookies ? { cookie: clientCookies } : {}) },
+      headers: {
+        "content-type": "application/json",
+        origin,
+        ...(useCookie && clientCookies ? { cookie: clientCookies } : {}),
+      },
       ...(payload === undefined ? {} : { body: JSON.stringify(payload) }),
     });
     const result = await response.json();
@@ -318,27 +646,115 @@ try {
     return { result, response };
   }
   await client("project", "GET", undefined, 401, false);
-  await client("activate", "POST", { slug: p.slug, invite, password: "short" }, 400, false);
-  await client("activate", "POST", { slug: p.slug, invite, password: "x".repeat(73) }, 400, false);
-  const activated = await client("activate", "POST", { slug: p.slug, invite, password: "strong-qa-password-2026" }, 200, false);
-  clientCookies = activated.response.headers.getSetCookie().map((v) => v.split(";")[0]).join("; ");
-  await client("activate", "POST", { slug: p.slug, invite, password: "strong-qa-password-2026" }, 409, false);
+  await client(
+    "activate",
+    "POST",
+    { slug: p.slug, invite, password: "short" },
+    400,
+    false,
+  );
+  await client(
+    "activate",
+    "POST",
+    { slug: p.slug, invite, password: "x".repeat(73) },
+    400,
+    false,
+  );
+  const activated = await client(
+    "activate",
+    "POST",
+    { slug: p.slug, invite, password: "strong-qa-password-2026" },
+    200,
+    false,
+  );
+  clientCookies = activated.response.headers
+    .getSetCookie()
+    .map((v) => v.split(";")[0])
+    .join("; ");
+  await client(
+    "activate",
+    "POST",
+    { slug: p.slug, invite, password: "strong-qa-password-2026" },
+    409,
+    false,
+  );
   const clientProject = (await client("project")).result.project;
   assert.equal(clientProject.id, p.id);
   assert.equal(clientProject.references, undefined);
-  const changed = { ...clientProject.draft, headline: "Client managed headline", services: clientProject.draft.services.map((s,i) => i === 0 ? { ...s, price: 4400, image: asset } : s) };
-  const saved = (await client("project", "PATCH", { version: clientProject.version, config: changed })).result.project;
-  await client("project", "PATCH", { version: clientProject.version, config: changed }, 409);
-  assert.ok(!(await (await fetch(origin + "/s/" + p.slug)).text()).includes("Client managed headline"));
+  const changed = {
+    ...clientProject.draft,
+    headline: "Client managed headline",
+    services: clientProject.draft.services.map((s, i) =>
+      i === 0 ? { ...s, price: 4400, image: asset } : s,
+    ),
+  };
+  const saved = (
+    await client("project", "PATCH", {
+      version: clientProject.version,
+      config: changed,
+    })
+  ).result.project;
+  await client(
+    "project",
+    "PATCH",
+    { version: clientProject.version, config: changed },
+    409,
+  );
+  assert.ok(
+    !(await (await fetch(origin + "/s/" + p.slug)).text()).includes(
+      "Client managed headline",
+    ),
+  );
   await client("publish", "POST", { version: saved.version });
-  assert.ok((await (await fetch(origin + "/s/" + p.slug)).text()).includes("Client managed headline"));
-  assert.equal((await client("bookings")).result.bookings.length, 1);
-  await client("bookings", "PATCH", { id: "other-project-booking", status: "cancelled" }, 404);
+  assert.ok(
+    (await (await fetch(origin + "/s/" + p.slug)).text()).includes(
+      "Client managed headline",
+    ),
+  );
+  assert.equal((await client("bookings")).result.bookings.length, 2);
+  await client(
+    "bookings",
+    "PATCH",
+    { id: "other-project-booking", status: "cancelled" },
+    404,
+  );
+  await client(
+    `booking-history&bookingId=${bayRemaining.id}`,
+    "GET",
+    undefined,
+    404,
+  );
+  const current = (await client("bookings")).result.bookings.find(
+    (x) => x.id === b.id,
+  );
+  await client("bookings", "PATCH", {
+    id: b.id,
+    action: "note",
+    note: "Client note",
+    version: current.version,
+  });
+  assert.equal(
+    (await client(`booking-history&bookingId=${b.id}`)).result.events.at(-1)
+      .actor,
+    "client",
+  );
   await client("session", "DELETE");
   await client("project", "GET", undefined, 401);
-  const logged = await client("login", "POST", { slug: p.slug, password: "strong-qa-password-2026" }, 200, false);
-  clientCookies = logged.response.headers.getSetCookie().map((v) => v.split(";")[0]).join("; ");
-  assert.equal((await client("project")).result.project.publishedVersion, saved.version);
+  const logged = await client(
+    "login",
+    "POST",
+    { slug: p.slug, password: "strong-qa-password-2026" },
+    200,
+    false,
+  );
+  clientCookies = logged.response.headers
+    .getSetCookie()
+    .map((v) => v.split(";")[0])
+    .join("; ");
+  assert.equal(
+    (await client("project")).result.project.publishedVersion,
+    saved.version,
+  );
   await api(
     `projects/${other.id}/bookings`,
     "PATCH",
@@ -350,28 +766,63 @@ try {
   const protectedCopy = await req("/api/operations", "POST", {});
   assert.equal(protectedCopy.backup.stale, false);
   assert.ok(protectedCopy.backup.latest.bytes > 1000);
-  const download = await fetch(origin + "/api/operations?download=latest", {headers:{cookie:cookies}});
+  const download = await fetch(origin + "/api/operations?download=latest", {
+    headers: { cookie: cookies },
+  });
   assert.equal(download.status, 200);
   const restoredDir = join(dir, "restored-data");
   const downloadedBackup = join(dir, "downloaded-backup.sqlite");
-  writeFileSync(downloadedBackup, Buffer.from(await download.arrayBuffer()), {mode:0o600});
-  const restore = spawnSync(process.execPath, ["scripts/detailing-restore.mjs", downloadedBackup, restoredDir], {encoding:"utf8"});
+  writeFileSync(downloadedBackup, Buffer.from(await download.arrayBuffer()), {
+    mode: 0o600,
+  });
+  const restore = spawnSync(
+    process.execPath,
+    ["scripts/detailing-restore.mjs", downloadedBackup, restoredDir],
+    { encoding: "utf8" },
+  );
   assert.equal(restore.status, 0, restore.stderr);
-  const refusedOverwrite = spawnSync(process.execPath, ["scripts/detailing-restore.mjs", downloadedBackup, restoredDir], {encoding:"utf8"});
+  const refusedOverwrite = spawnSync(
+    process.execPath,
+    ["scripts/detailing-restore.mjs", downloadedBackup, restoredDir],
+    { encoding: "utf8" },
+  );
   assert.notEqual(refusedOverwrite.status, 0);
-  const restoredDb = new DatabaseSync(join(restoredDir, "studio.sqlite"), {readOnly:true});
-  assert.equal(restoredDb.prepare("PRAGMA integrity_check").get().integrity_check, "ok");
-  assert.equal(restoredDb.prepare("SELECT COUNT(*) AS total FROM detail_bookings WHERE project_id=?").get(p.id).total, 1);
+  const restoredDb = new DatabaseSync(join(restoredDir, "studio.sqlite"), {
+    readOnly: true,
+  });
+  assert.equal(
+    restoredDb.prepare("PRAGMA integrity_check").get().integrity_check,
+    "ok",
+  );
+  assert.equal(
+    restoredDb
+      .prepare(
+        "SELECT COUNT(*) AS total FROM detail_bookings WHERE project_id=?",
+      )
+      .get(p.id).total,
+    2,
+  );
   restoredDb.close();
   await stop();
   env.DETAILING_DATA_DIR = restoredDir;
-  writeFileSync(join(dir, "access.json"), JSON.stringify({password, origin, env}), {mode:0o600});
+  writeFileSync(
+    join(dir, "access.json"),
+    JSON.stringify({ password, origin, env }),
+    { mode: 0o600 },
+  );
   await start();
-  assert.equal((await api(`sites/${p.slug}/receipt`, "POST", { submissionToken }, false)).booking.id, savedBooking.id);
+  assert.equal(
+    (await api(`sites/${p.slug}/receipt`, "POST", { submissionToken }, false))
+      .booking.id,
+    savedBooking.id,
+  );
   assert.equal((await client("project")).result.project.id, p.id);
-  assert.equal((await fetch(origin+asset)).status,200);
-  assert.equal((await api(`projects/${p.id}/bookings`)).bookings.length, 1);
-  assert.equal((await api(`projects/${p.id}`)).project.publishedVersion, saved.version);
+  assert.equal((await fetch(origin + asset)).status, 200);
+  assert.equal((await api(`projects/${p.id}/bookings`)).bookings.length, 2);
+  assert.equal(
+    (await api(`projects/${p.id}`)).project.publishedVersion,
+    saved.version,
+  );
   await api(`projects/${p.id}/bookings`, "PATCH", {
     id: b.id,
     status: "cancelled",
@@ -405,7 +856,7 @@ try {
     await api(`sites/${p.slug}/bookings`, "POST", booking, false, 500);
   }
   console.log(
-    "PASS: auth/isolation, approval, concurrent booking, idempotent retry, private receipt recovery, verified backup and real restore/restart, cancellation, database outage readiness.",
+    "PASS: auth/isolation, sandbox, approval, duration boundaries, atomic reschedule, audit history, optimistic concurrency, concurrent booking, idempotent retry, private receipt recovery, verified backup and real restore/restart, cancellation, database outage readiness.",
   );
   console.log("QA fixture:", dir);
   if (process.argv.includes("--keep")) {

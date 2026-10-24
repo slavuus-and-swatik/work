@@ -9,6 +9,8 @@ import {
   type DetailProject,
   type DetailReview,
   type DetailBooking,
+  type BookingMutation,
+  type BookingEvent,
 } from "./model";
 
 export class DetailError extends Error {
@@ -23,14 +25,29 @@ function decode<T>(row: unknown): T | null {
   return row ? (JSON.parse((row as { data: string }).data) as T) : null;
 }
 function displayConfig(config: DetailConfig): DetailConfig {
-  if (!(config.demo && config.name === "FORMA" && config.accent === "#c9ed72")) return config;
-  return { ...config, accent: defaultDetailConfig.accent, services: config.services.map((service) => ({ ...service, image: service.image || defaultDetailConfig.services.find((x) => x.id === service.id)?.image || "" })) };
+  if (!(config.demo && config.name === "FORMA" && config.accent === "#c9ed72"))
+    return config;
+  return {
+    ...config,
+    accent: defaultDetailConfig.accent,
+    services: config.services.map((service) => ({
+      ...service,
+      image:
+        service.image ||
+        defaultDetailConfig.services.find((x) => x.id === service.id)?.image ||
+        "",
+    })),
+  };
 }
 export const listProjects = () =>
   db()
     .prepare("SELECT data FROM detail_projects")
     .all()
-    .map((r) => { const p = decode<DetailProject>(r)!; p.draft = displayConfig(p.draft); return p; })
+    .map((r) => {
+      const p = decode<DetailProject>(r)!;
+      p.draft = displayConfig(p.draft);
+      return p;
+    })
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 export function project(id: string) {
   const p = decode<DetailProject>(
@@ -203,20 +220,39 @@ export function publishProject(id: string, version: number) {
   });
 }
 function assertPublishable(config: DetailConfig) {
-  if (!config.demo && (!/^[78]\d{10}$/.test(config.phone.replace(/\D/g, "")) || !config.address || !config.legalName || config.privacyText.length < 40))
-    throw new DetailError("Для рабочего сайта заполните телефон, адрес, наименование оператора и текст обработки данных");
+  if (
+    !config.demo &&
+    (!/^[78]\d{10}$/.test(config.phone.replace(/\D/g, "")) ||
+      !config.address ||
+      !config.legalName ||
+      config.privacyText.length < 40)
+  )
+    throw new DetailError(
+      "Для рабочего сайта заполните телефон, адрес, наименование оператора и текст обработки данных",
+    );
 }
-export function updateClientContent(id: string, version: number, input: unknown) {
+export function updateClientContent(
+  id: string,
+  version: number,
+  input: unknown,
+) {
   const config = detailConfigSchema.parse(input);
   return transaction(() => {
     const p = project(id);
-    if (p.publishedVersion === null) throw new DetailError("Кабинет доступен после запуска сайта", 409);
-    if (p.version !== version) throw new DetailError("Сайт изменился в другой вкладке. Обновите страницу.", 409);
+    if (p.publishedVersion === null)
+      throw new DetailError("Кабинет доступен после запуска сайта", 409);
+    if (p.version !== version)
+      throw new DetailError(
+        "Сайт изменился в другой вкладке. Обновите страницу.",
+        409,
+      );
     if (p.reviewToken) {
       const r = review(p.reviewToken);
       if (r.status === "pending") {
         r.status = "superseded";
-        db().prepare("UPDATE detail_reviews SET data=? WHERE token=?").run(JSON.stringify(r), r.token);
+        db()
+          .prepare("UPDATE detail_reviews SET data=? WHERE token=?")
+          .run(JSON.stringify(r), r.token);
       }
     }
     p.draft = config;
@@ -231,11 +267,15 @@ export function updateClientContent(id: string, version: number, input: unknown)
 export function publishClientContent(id: string, version: number) {
   return transaction(() => {
     const p = project(id);
-    if (p.publishedVersion === null) throw new DetailError("Сайт ещё не передан клиенту", 409);
-    if (p.version !== version) throw new DetailError("Сначала обновите проект", 409);
+    if (p.publishedVersion === null)
+      throw new DetailError("Сайт ещё не передан клиенту", 409);
+    if (p.version !== version)
+      throw new DetailError("Сначала обновите проект", 409);
     const config = detailConfigSchema.parse(p.draft);
     assertPublishable(config);
-    db().prepare("UPDATE detail_sites SET config=?,version=? WHERE project_id=?").run(JSON.stringify(config), p.version, id);
+    db()
+      .prepare("UPDATE detail_sites SET config=?,version=? WHERE project_id=?")
+      .run(JSON.stringify(config), p.version, id);
     p.publishedVersion = p.version;
     return save(p);
   });
@@ -277,53 +317,64 @@ export function bookings(projectId: string, date?: string) {
   ).map((r) => decode<DetailBooking>(r)!);
 }
 function validDate(config: DetailConfig, date: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
   const day = new Date(date + "T12:00:00+03:00");
-  const now = Date.now();
+  const today = new Date().toLocaleDateString("en-CA", {
+    timeZone: "Europe/Moscow",
+  });
   return (
     Number.isFinite(day.getTime()) &&
     day.toISOString().slice(0, 10) === date &&
-    day.getTime() > now - 86400000 &&
-    day.getTime() < now + 90 * 86400000 &&
+    date >= today &&
+    day.getTime() < Date.now() + 90 * 86400000 &&
     config.workDays.includes(day.getUTCDay())
   );
 }
-function slotData(
+const minutes = (time: string) => {
+  const [h, m] = time.split(":").map(Number);
+  return h * 60 + m;
+};
+function slotsForDuration(
   site: ReturnType<typeof liveSite>,
-  serviceId: string,
+  duration: number,
   date: string,
+  excludeId?: string,
 ) {
-  const service = site.config.services.find((s) => s.id === serviceId);
-  if (!service || !validDate(site.config, date)) return [];
+  if (!validDate(site.config, date)) return [];
   const existing = bookings(site.projectId, date).filter(
-    (b) => b.status !== "cancelled",
+    (b) => b.status !== "cancelled" && b.id !== excludeId,
   );
   const slots: { time: string; bay: number }[] = [];
   for (
     let start = site.config.openHour * 60;
-    start + service.duration <= site.config.closeHour * 60;
+    start + duration <= site.config.closeHour * 60;
     start += 30
   ) {
     const time = `${String(Math.floor(start / 60)).padStart(2, "0")}:${String(start % 60).padStart(2, "0")}`;
     if (new Date(`${date}T${time}:00+03:00`).getTime() < Date.now() + 3600000)
       continue;
-    const overlapping = existing.filter((b) => {
-      const [h, m] = b.time.split(":").map(Number);
-      return start < h * 60 + m + b.duration && start + service.duration > h * 60 + m;
-    });
-    // A capacity reduction must also count bookings assigned to former bays.
-    if (overlapping.length >= site.config.capacity) continue;
+    const overlaps = existing.filter(
+      (b) =>
+        start < minutes(b.time) + b.duration &&
+        start + duration > minutes(b.time),
+    );
+    // Count simultaneous occupation, including reservations on bays removed later.
+    // Sequential visits inside one long visit must not be counted as simultaneous.
+    const boundaries = overlaps
+      .flatMap((b) => [
+        [Math.max(start, minutes(b.time)), 1],
+        [Math.min(start + duration, minutes(b.time) + b.duration), -1],
+      ])
+      .sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    let occupation = 0;
+    if (
+      boundaries.some(
+        ([, delta]) => (occupation += delta) >= site.config.capacity,
+      )
+    )
+      continue;
     for (let bay = 1; bay <= site.config.capacity; bay++) {
-      if (
-        !existing.some((b) => {
-          const [h, m] = b.time.split(":").map(Number);
-          const t = h * 60 + m;
-          return (
-            b.bay === bay &&
-            start < t + b.duration &&
-            start + service.duration > t
-          );
-        })
-      ) {
+      if (!overlaps.some((b) => b.bay === bay)) {
         slots.push({ time, bay });
         break;
       }
@@ -331,27 +382,63 @@ function slotData(
   }
   return slots;
 }
+function slotData(
+  site: ReturnType<typeof liveSite>,
+  serviceId: string,
+  date: string,
+) {
+  const service = site.config.services.find((s) => s.id === serviceId);
+  return service ? slotsForDuration(site, service.duration, date) : [];
+}
 export function availableSlots(slug: string, service: string, date: string) {
   return slotData(liveSite(slug), service, date).map((s) => s.time);
 }
-export function createBooking(slug: string, input: unknown) {
+export function createBooking(slug: string, input: unknown, sandbox = false) {
   const v = bookingInputSchema.parse(input);
   if (v.website) throw new DetailError("Не удалось отправить заявку");
   return transaction(() => {
     const site = liveSite(slug);
-    const tokenHash = v.submissionToken ? createHash("sha256").update(v.submissionToken).digest("hex") : null;
-    const payloadHash = createHash("sha256").update(JSON.stringify({ ...v, submissionToken: undefined, phone: "7" + v.phone.slice(1) })).digest("hex");
-    if (tokenHash) {
-      const existing = db().prepare("SELECT payload_hash,booking_id FROM detail_booking_receipts WHERE project_id=? AND token_hash=?").get(site.projectId, tokenHash) as {payload_hash: string; booking_id: string} | undefined;
-      if (existing) {
-        if (existing.payload_hash !== payloadHash) throw new DetailError("Эта отправка уже сохранена с другими данными. Проверьте её статус.", 409);
-        return decode<DetailBooking>(db().prepare("SELECT data FROM detail_bookings WHERE id=?").get(existing.booking_id))!;
-      }
-    }
-    if (site.config.demo)
+    if (site.config.demo && !sandbox)
       throw new DetailError(
         "Это демонстрационный сайт. Приём заявок отключён.",
       );
+    if (sandbox && !site.config.demo)
+      throw new DetailError(
+        "Тестовая запись доступна только на демонстрационном сайте",
+      );
+    const tokenHash = v.submissionToken
+      ? createHash("sha256").update(v.submissionToken).digest("hex")
+      : null;
+    const payloadHash = createHash("sha256")
+      .update(
+        JSON.stringify({
+          ...v,
+          submissionToken: undefined,
+          phone: "7" + v.phone.slice(1),
+        }),
+      )
+      .digest("hex");
+    if (tokenHash) {
+      const existing = db()
+        .prepare(
+          "SELECT payload_hash,booking_id FROM detail_booking_receipts WHERE project_id=? AND token_hash=?",
+        )
+        .get(site.projectId, tokenHash) as
+        | { payload_hash: string; booking_id: string }
+        | undefined;
+      if (existing) {
+        if (existing.payload_hash !== payloadHash)
+          throw new DetailError(
+            "Эта отправка уже сохранена с другими данными. Проверьте её статус.",
+            409,
+          );
+        return decode<DetailBooking>(
+          db()
+            .prepare("SELECT data FROM detail_bookings WHERE id=?")
+            .get(existing.booking_id),
+        )!;
+      }
+    }
     const slot = slotData(site, v.serviceId, v.date).find(
       (s) => s.time === v.time,
     );
@@ -373,46 +460,152 @@ export function createBooking(slug: string, input: unknown) {
       comment: v.comment,
       status: "pending",
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      version: 1,
+      sandbox,
+      staffNote: "",
     };
     db()
       .prepare("INSERT INTO detail_bookings VALUES(?,?,?,?)")
       .run(booking.id, site.projectId, booking.date, JSON.stringify(booking));
-    if (tokenHash) db().prepare("INSERT INTO detail_booking_receipts VALUES(?,?,?,?)").run(site.projectId, tokenHash, payloadHash, booking.id);
+    recordBookingEvent(booking, "visitor", "created");
+    if (tokenHash)
+      db()
+        .prepare("INSERT INTO detail_booking_receipts VALUES(?,?,?,?)")
+        .run(site.projectId, tokenHash, payloadHash, booking.id);
     return booking;
   });
 }
 export function bookingReceipt(slug: string, token: string) {
-  if (!/^[a-f0-9]{64}$/.test(token)) throw new DetailError("Некорректный номер проверки");
+  if (!/^[a-f0-9]{64}$/.test(token))
+    throw new DetailError("Некорректный номер проверки");
   const tokenHash = createHash("sha256").update(token).digest("hex");
-  const row = db().prepare("SELECT b.data FROM detail_booking_receipts r JOIN detail_projects p ON p.id=r.project_id JOIN detail_bookings b ON b.id=r.booking_id WHERE p.slug=? AND r.token_hash=?").get(slug, tokenHash);
+  const row = db()
+    .prepare(
+      "SELECT b.data FROM detail_booking_receipts r JOIN detail_projects p ON p.id=r.project_id JOIN detail_bookings b ON b.id=r.booking_id WHERE p.slug=? AND r.token_hash=?",
+    )
+    .get(slug, tokenHash);
   const booking = decode<DetailBooking>(row);
   if (!booking) throw new DetailError("Заявка пока не найдена", 404);
   return booking;
 }
 export function publicBooking(booking: DetailBooking) {
-  return { id: booking.id, date: booking.date, time: booking.time, serviceName: booking.serviceName, status: booking.status };
+  return {
+    id: booking.id,
+    date: booking.date,
+    time: booking.time,
+    serviceName: booking.serviceName,
+    status: booking.status,
+    sandbox: !!booking.sandbox,
+  };
+}
+function getBooking(projectId: string, id: string) {
+  const b = decode<DetailBooking>(
+    db()
+      .prepare("SELECT data FROM detail_bookings WHERE id=? AND project_id=?")
+      .get(id, projectId),
+  );
+  if (!b) throw new DetailError("Заявка не найдена", 404);
+  return { ...b, version: b.version || 1 };
+}
+function recordBookingEvent(
+  b: DetailBooking,
+  actor: BookingEvent["actor"],
+  action: BookingEvent["action"],
+  from?: BookingEvent["from"],
+) {
+  const event: BookingEvent = {
+    id: randomUUID(),
+    at: new Date().toISOString(),
+    actor,
+    action,
+    from,
+    to: { date: b.date, time: b.time, status: b.status },
+    ...(action === "note" ? { note: b.staffNote } : {}),
+  };
+  db()
+    .prepare("INSERT INTO detail_booking_events VALUES(?,?,?,?)")
+    .run(event.id, b.projectId, b.id, JSON.stringify(event));
+}
+export function bookingHistory(projectId: string, id: string) {
+  getBooking(projectId, id);
+  return db()
+    .prepare(
+      "SELECT data FROM detail_booking_events WHERE project_id=? AND booking_id=? ORDER BY rowid",
+    )
+    .all(projectId, id)
+    .map((r) => decode<BookingEvent>(r)!);
+}
+export function rescheduleSlots(projectId: string, id: string, date: string) {
+  const b = getBooking(projectId, id);
+  if (b.status === "cancelled" || b.status === "completed") return [];
+  const site = liveSite(project(projectId).slug);
+  return slotsForDuration(site, b.duration, date, b.id).map((s) => s.time);
+}
+export function mutateBooking(
+  projectId: string,
+  input: BookingMutation,
+  actor: "agency" | "client",
+) {
+  return transaction(() => {
+    const b = getBooking(projectId, input.id);
+    if (input.version !== undefined && input.version !== b.version)
+      throw new DetailError(
+        "Заявка уже изменена в другой вкладке. Обновите список.",
+        409,
+      );
+    const from = { date: b.date, time: b.time, status: b.status };
+    if (input.action === "status") {
+      const transitions: Record<
+        DetailBooking["status"],
+        DetailBooking["status"][]
+      > = {
+        pending: ["confirmed", "cancelled"],
+        confirmed: ["completed", "cancelled"],
+        completed: [],
+        cancelled: [],
+      };
+      if (b.status === input.status) return b;
+      if (!transitions[b.status].includes(input.status))
+        throw new DetailError(
+          "Этот переход статуса недоступен. Отменённые и завершённые визиты не восстанавливаются.",
+          409,
+        );
+      b.status = input.status;
+    } else if (input.action === "reschedule") {
+      if (b.status === "cancelled" || b.status === "completed")
+        throw new DetailError(
+          "Перенести можно только новую или подтверждённую запись",
+          409,
+        );
+      const site = liveSite(project(projectId).slug);
+      const slot = slotsForDuration(site, b.duration, input.date, b.id).find(
+        (s) => s.time === input.time,
+      );
+      if (!slot)
+        throw new DetailError(
+          "Новое время уже занято или недоступно. Исходная запись сохранена.",
+          409,
+        );
+      b.date = input.date;
+      b.time = input.time;
+      b.bay = slot.bay;
+    } else b.staffNote = input.note;
+    b.version++;
+    b.updatedAt = new Date().toISOString();
+    db()
+      .prepare(
+        "UPDATE detail_bookings SET date=?,data=? WHERE id=? AND project_id=?",
+      )
+      .run(b.date, JSON.stringify(b), b.id, projectId);
+    recordBookingEvent(b, actor, input.action, from);
+    return b;
+  });
 }
 export function changeBooking(
   projectId: string,
   id: string,
   status: DetailBooking["status"],
 ) {
-  return transaction(() => {
-    const b = decode<DetailBooking>(
-      db()
-        .prepare("SELECT data FROM detail_bookings WHERE id=? AND project_id=?")
-        .get(id, projectId),
-    );
-    if (!b) throw new DetailError("Заявка не найдена", 404);
-    if (b.status === "cancelled" && status !== "cancelled")
-      throw new DetailError(
-        "Отменённую заявку нельзя восстановить: время мог занять другой клиент",
-        409,
-      );
-    b.status = status;
-    db()
-      .prepare("UPDATE detail_bookings SET data=? WHERE id=?")
-      .run(JSON.stringify(b), id);
-    return b;
-  });
+  return mutateBooking(projectId, { action: "status", id, status }, "agency");
 }

@@ -21,8 +21,20 @@ import { PhotoProvider, PhotoView } from "react-photo-view";
 import "react-photo-view/dist/react-photo-view.css";
 import "./site.css";
 import "./effects.css";
-type Receipt = { id: string; serviceName: string; date: string; time: string; status: string };
-const receiptStatus: Record<string, string> = { pending: "Ожидает подтверждения", confirmed: "Запись подтверждена", completed: "Визит завершён", cancelled: "Запись отменена" };
+type Receipt = {
+  id: string;
+  serviceName: string;
+  date: string;
+  time: string;
+  status: string;
+  sandbox?: boolean;
+};
+const receiptStatus: Record<string, string> = {
+  pending: "Ожидает подтверждения",
+  confirmed: "Запись подтверждена",
+  completed: "Визит завершён",
+  cancelled: "Запись отменена",
+};
 
 export default function DetailingSite({
   config: c,
@@ -49,22 +61,34 @@ export default function DetailingSite({
   const [uncertain, setUncertain] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const lastToken = useRef("");
-  const submission = useRef<{ token: string; payload: Record<string, unknown> } | null>(null);
+  const submission = useRef<{
+    token: string;
+    payload: Record<string, unknown>;
+  } | null>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const service = c.services.find((s) => s.id === selected);
-  const disabled = preview || c.demo || !slug;
+  const disabled = preview || !slug;
+  const sandbox = c.demo && !disabled;
   async function readReceipt(token: string) {
-    const response = await fetch(`/api/detailing/sites/${slug}/receipt`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ submissionToken: token }), signal: AbortSignal.timeout(10000) });
+    const response = await fetch(`/api/detailing/sites/${slug}/receipt`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ submissionToken: token }),
+      signal: AbortSignal.timeout(10000),
+    });
     if (response.status === 404) return null;
     const value = await response.json();
-    if (!response.ok) throw new Error(value.error || "Статус временно недоступен");
+    if (!response.ok)
+      throw new Error(value.error || "Статус временно недоступен");
     return value.booking as Receipt;
   }
   function complete(booking: Receipt) {
     setReceipt(booking);
     setUncertain(false);
     submission.current = null;
-    setSuccess(`${receiptStatus[booking.status] || booking.status}. ${booking.serviceName}, ${booking.date.split("-").reverse().join(".")} в ${booking.time} (МСК). Номер: ${booking.id.slice(0, 8).toUpperCase()}. Заявка сохранена в студии; администратор свяжется с вами.`);
+    setSuccess(
+      `${receiptStatus[booking.status] || booking.status}. ${booking.serviceName}, ${booking.date.split("-").reverse().join(".")} в ${booking.time} (МСК). Номер: ${booking.id.slice(0, 8).toUpperCase()}. ${booking.sandbox ? "Тестовая заявка сохранена. Реальный визит не требуется." : "Заявка сохранена в студии; администратор свяжется с вами."}`,
+    );
     setReceiptNote("");
   }
   async function refreshReceipt() {
@@ -72,29 +96,80 @@ export default function DetailingSite({
     setCheckingReceipt(true);
     try {
       const value = await readReceipt(lastToken.current);
-      if (value) { setReceipt(value); setReceiptNote(""); if (uncertain) complete(value); }
-      else setReceiptNote("Сохранение пока не подтверждено. Повторите проверку или отправку: повторная отправка защищена от дубликатов.");
-    } catch { setReceiptNote("Не удалось связаться со студией. Статус пока неизвестен — проверьте ещё раз или позвоните."); }
-    finally { setCheckingReceipt(false); }
+      if (value) {
+        setReceipt(value);
+        setReceiptNote("");
+        if (uncertain) complete(value);
+      } else
+        setReceiptNote(
+          "Сохранение пока не подтверждено. Повторите проверку или отправку: повторная отправка защищена от дубликатов.",
+        );
+    } catch {
+      setReceiptNote(
+        "Не удалось связаться со студией. Статус пока неизвестен — проверьте ещё раз или позвоните.",
+      );
+    } finally {
+      setCheckingReceipt(false);
+    }
   }
   useEffect(() => {
     if (disabled) return;
     try {
-      const stored = JSON.parse(localStorage.getItem(`forma-receipt:${slug}`) || "null");
-      if (stored && /^[a-f0-9]{64}$/.test(stored.token) && Date.now() - stored.createdAt < 7 * 86400000) {
+      const stored = JSON.parse(
+        localStorage.getItem(`forma-receipt:${slug}`) || "null",
+      );
+      if (
+        stored &&
+        /^[a-f0-9]{64}$/.test(stored.token) &&
+        Date.now() - stored.createdAt < 7 * 86400000
+      ) {
         lastToken.current = stored.token;
         setReceiptNote("Проверяем последнюю заявку…");
-        void readReceipt(stored.token).then((value) => { setReceipt(value); setReceiptNote(value ? "" : "Последняя отправка пока не найдена. Проверьте статус перед новой записью."); }).catch(() => setReceiptNote("Статус последней заявки пока недоступен. Проверьте его повторно."));
+        void readReceipt(stored.token)
+          .then((value) => {
+            setReceipt(value);
+            setReceiptNote(
+              value
+                ? ""
+                : "Последняя отправка пока не найдена. Проверьте статус перед новой записью.",
+            );
+          })
+          .catch(() =>
+            setReceiptNote(
+              "Статус последней заявки пока недоступен. Проверьте его повторно.",
+            ),
+          );
       }
-    } catch { /* Storage is optional; the request still works in private mode. */ }
+    } catch {
+      /* Storage is optional; the request still works in private mode. */
+    }
   }, [slug, disabled]);
   useEffect(() => {
     const element = root.current;
-    if (!element || !window.IntersectionObserver || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const observer = new IntersectionObserver((entries) => entries.forEach((entry) => { if (entry.isIntersecting) { entry.target.classList.add("dt-visible"); observer.unobserve(entry.target); } }), { threshold: 0.04 });
-    element.querySelectorAll(".dt-section").forEach((section) => observer.observe(section));
+    if (
+      !element ||
+      !window.IntersectionObserver ||
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    )
+      return;
+    const observer = new IntersectionObserver(
+      (entries) =>
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("dt-visible");
+            observer.unobserve(entry.target);
+          }
+        }),
+      { threshold: 0.04 },
+    );
+    element
+      .querySelectorAll(".dt-section")
+      .forEach((section) => observer.observe(section));
     element.dataset.motion = "on";
-    return () => { observer.disconnect(); delete element.dataset.motion; };
+    return () => {
+      observer.disconnect();
+      delete element.dataset.motion;
+    };
   }, [c.gallery.length, c.faqs.length]);
   useEffect(() => {
     if (selected) dialog.current?.showModal();
@@ -106,32 +181,48 @@ export default function DetailingSite({
       return;
     }
     let current = true;
-    setLoading(true);
+    setSlots([]);
     setTime("");
     setError("");
-    fetch(
-      `/api/detailing/sites/${slug}/slots?service=${encodeURIComponent(selected)}&date=${date}`,
-    )
-      .then(async (r) => {
+    async function load(initial = false) {
+      if (initial) setLoading(true);
+      try {
+        const r = await fetch(
+          `/api/detailing/sites/${slug}/slots?service=${encodeURIComponent(selected)}&date=${date}`,
+          { signal: AbortSignal.timeout(10000) },
+        );
         const v = await r.json();
         if (!r.ok) throw new Error(v.error);
-        if (current) setSlots(v.slots);
-      })
-      .catch((e) => {
-        if (current) setError(e.message);
-      })
-      .finally(() => {
+        if (current) {
+          setSlots(v.slots);
+          setTime((old) => (v.slots.includes(old) ? old : ""));
+        }
+      } catch {
+        if (current) {
+          setSlots([]);
+          setTime("");
+          setError(
+            "Не удалось обновить свободное время. Проверяем повторно; можно выбрать другую дату.",
+          );
+        }
+      } finally {
         if (current) setLoading(false);
-      });
+      }
+    }
+    void load(true);
+    const timer = setInterval(() => void load(), 15000);
     return () => {
       current = false;
+      clearInterval(timer);
     };
   }, [selected, date, disabled, slug]);
   function open(id?: string) {
     setSuccess("");
     setError("");
     if (uncertain && submission.current) {
-      setError("Результат предыдущей отправки пока неизвестен. Проверьте статус или повторите ту же заявку безопасно.");
+      setError(
+        "Результат предыдущей отправки пока неизвестен. Проверьте статус или повторите ту же заявку безопасно.",
+      );
       setSelected(String(submission.current.payload.serviceId));
       setMenu(false);
       return;
@@ -149,49 +240,111 @@ export default function DetailingSite({
     const f = new FormData(e.currentTarget);
     let pending = submission.current;
     if (!pending) {
-      const token = lastToken.current && !receipt ? lastToken.current : Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, "0")).join("");
-      pending = { token, payload: {
-        serviceId: selected, date, time, name: f.get("name"), phone: String(f.get("phone")).replace(/\D/g, ""), car: f.get("car"), comment: f.get("comment"), consent: f.get("consent") === "on", website: f.get("website"), submissionToken: token,
-      } };
+      const token =
+        lastToken.current && !receipt
+          ? lastToken.current
+          : Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) =>
+              b.toString(16).padStart(2, "0"),
+            ).join("");
+      pending = {
+        token,
+        payload: {
+          serviceId: selected,
+          date,
+          time,
+          name: f.get("name"),
+          phone: String(f.get("phone")).replace(/\D/g, ""),
+          car: f.get("car"),
+          comment: f.get("comment"),
+          consent: f.get("consent") === "on",
+          website: f.get("website"),
+          submissionToken: token,
+        },
+      };
+      if (sandbox)
+        pending.payload = {
+          serviceId: selected,
+          date,
+          time,
+          submissionToken: token,
+        };
       submission.current = pending;
       lastToken.current = token;
       setReceipt(null);
-      try { localStorage.setItem(`forma-receipt:${slug}`, JSON.stringify({ token, createdAt: Date.now() })); } catch {}
+      try {
+        localStorage.setItem(
+          `forma-receipt:${slug}`,
+          JSON.stringify({ token, createdAt: Date.now() }),
+        );
+      } catch {}
     }
     try {
-      const r = await fetch(`/api/detailing/sites/${slug}/bookings`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(pending.payload),
-        signal: AbortSignal.timeout(15000),
-      });
+      const r = await fetch(
+        `/api/detailing/sites/${slug}/${sandbox ? "demo-bookings" : "bookings"}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(pending.payload),
+          signal: AbortSignal.timeout(15000),
+        },
+      );
       const v = await r.json();
       if (!r.ok) {
         const saved = await readReceipt(pending.token);
-        if (saved) { complete(saved); return; }
+        if (saved) {
+          complete(saved);
+          return;
+        }
         if (r.status >= 400 && r.status < 500) {
-          submission.current = null; lastToken.current = ""; setUncertain(false);
-          try { localStorage.removeItem(`forma-receipt:${slug}`); } catch {}
+          submission.current = null;
+          lastToken.current = "";
+          setUncertain(false);
+          try {
+            localStorage.removeItem(`forma-receipt:${slug}`);
+          } catch {}
           setError(v.error || "Проверьте данные заявки");
+          if (r.status === 409) {
+            setTime("");
+            setSlots([]);
+            void fetch(
+              `/api/detailing/sites/${slug}/slots?service=${encodeURIComponent(selected)}&date=${date}`,
+              { signal: AbortSignal.timeout(10000) },
+            )
+              .then((r) => r.json())
+              .then((v) => setSlots(v.slots || []))
+              .catch(() => {});
+          }
           return;
         }
         throw new Error("Сервер временно недоступен");
       }
       complete(v.booking);
     } catch (e) {
-      try { const saved = await readReceipt(pending.token); if (saved) { complete(saved); return; } } catch {}
+      try {
+        const saved = await readReceipt(pending.token);
+        if (saved) {
+          complete(saved);
+          return;
+        }
+      } catch {}
       setUncertain(true);
-      setError("Ответ студии не получен. Заявка могла сохраниться. Проверьте статус или повторите отправку — дубликат не появится.");
+      setError(
+        "Ответ студии не получен. Заявка могла сохраниться. Проверьте статус или повторите отправку — дубликат не появится.",
+      );
     } finally {
       setBusy(false);
     }
   }
   return (
-    <div ref={root} className="dt" style={{ "--dt-accent": c.accent } as CSSProperties}>
+    <div
+      ref={root}
+      className="dt"
+      style={{ "--dt-accent": c.accent } as CSSProperties}
+    >
       {c.demo && !preview && (
         <div className="dt-demo">
           Демонстрационный сайт · название, цены и изображения приведены для
-          примера · запись отключена
+          примера · тестовая запись с вымышленными контактами
         </div>
       )}
       <header className="dt-header">
@@ -235,7 +388,29 @@ export default function DetailingSite({
           <Menu size={22} />
         </button>
       </header>
-      {!disabled && (receipt || receiptNote) && <div className="dt-receipt" role="status"><div><strong>{receipt ? `${receiptStatus[receipt.status]} · ${receipt.serviceName}` : "Последняя заявка"}</strong><span>{receipt ? `${receipt.date.split("-").reverse().join(".")} · ${receipt.time} МСК · № ${receipt.id.slice(0, 8).toUpperCase()}` : receiptNote}</span>{receipt && receiptNote && <span>{receiptNote}</span>}</div><button disabled={checkingReceipt} onClick={() => void refreshReceipt()}>{checkingReceipt ? "Проверяем…" : "Обновить статус"}</button></div>}
+      {!disabled && (receipt || receiptNote) && (
+        <div className="dt-receipt" role="status">
+          <div>
+            <strong>
+              {receipt
+                ? `${receiptStatus[receipt.status]} · ${receipt.serviceName}`
+                : "Последняя заявка"}
+            </strong>
+            <span>
+              {receipt
+                ? `${receipt.date.split("-").reverse().join(".")} · ${receipt.time} МСК · № ${receipt.id.slice(0, 8).toUpperCase()}`
+                : receiptNote}
+            </span>
+            {receipt && receiptNote && <span>{receiptNote}</span>}
+          </div>
+          <button
+            disabled={checkingReceipt}
+            onClick={() => void refreshReceipt()}
+          >
+            {checkingReceipt ? "Проверяем…" : "Обновить статус"}
+          </button>
+        </div>
+      )}
       <main>
         <section className="dt-hero" id="top">
           <img
@@ -289,7 +464,14 @@ export default function DetailingSite({
                 <span className="dt-index">
                   {String(i + 1).padStart(2, "0")}
                 </span>
-                {s.image && <img className="dt-service-image" src={s.image} alt={s.name} loading="lazy" />}
+                {s.image && (
+                  <img
+                    className="dt-service-image"
+                    src={s.image}
+                    alt={s.name}
+                    loading="lazy"
+                  />
+                )}
                 <div>
                   <h3>{s.name}</h3>
                   <p>{s.description}</p>
@@ -328,7 +510,14 @@ export default function DetailingSite({
               <div className="dt-gallery">
                 {c.gallery.map((g, i) => (
                   <figure key={i}>
-                    <PhotoView src={g.image}><button className="dt-gallery-open" aria-label={`Открыть фото: ${g.caption}`}><img loading="lazy" src={g.image} alt={g.caption} /></button></PhotoView>
+                    <PhotoView src={g.image}>
+                      <button
+                        className="dt-gallery-open"
+                        aria-label={`Открыть фото: ${g.caption}`}
+                      >
+                        <img loading="lazy" src={g.image} alt={g.caption} />
+                      </button>
+                    </PhotoView>
                     <figcaption>{g.caption}</figcaption>
                   </figure>
                 ))}
@@ -432,7 +621,7 @@ export default function DetailingSite({
           <h3>Обработка персональных данных</h3>
           <p>
             {c.privacyText ||
-              "В демонстрационном режиме заявки и персональные данные не собираются. Перед запуском рабочего сайта владелец добавляет сведения об операторе и условия обработки данных."}
+              "В демонстрационном режиме используются вымышленные контакты. Перед запуском рабочего сайта владелец добавляет сведения об операторе и условия обработки данных."}
           </p>
         </section>
       )}
@@ -477,144 +666,166 @@ export default function DetailingSite({
               <p className="dt-form-note">
                 {disabled
                   ? "Предпросмотр формы. Реальные заявки здесь не отправляются."
-                  : "Время указано по Москве. Подтверждение и итоговая стоимость — после связи с администратором."}
+                  : sandbox
+                    ? "Тестовая запись с вымышленными контактами. Реальный визит не требуется. Заявку можно обработать в админке."
+                    : "Время указано по Москве. Подтверждение и итоговая стоимость — после связи с администратором."}
               </p>
               <form onSubmit={submit}>
                 <fieldset disabled={busy || uncertain}>
-                <label>
-                  Услуга
-                  <select
-                    value={selected}
-                    onChange={(e) => setSelected(e.target.value)}
-                  >
-                    {c.services.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name} — от {money(s.price)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <div className="dt-form-grid">
                   <label>
-                    Дата
-                    <input
-                      required
-                      type="date"
-                      min={new Date().toLocaleDateString("en-CA", {
-                        timeZone: "Europe/Moscow",
-                      })}
-                      value={date}
-                      onChange={(e) => setDate(e.target.value)}
-                    />
-                  </label>
-                  <label>
-                    Время
+                    Услуга
                     <select
-                      required
-                      value={time}
-                      onChange={(e) => setTime(e.target.value)}
+                      value={selected}
+                      onChange={(e) => setSelected(e.target.value)}
                     >
-                      <option value="">
-                        {loading
-                          ? "Загрузка…"
-                          : date
-                            ? "Выберите время"
-                            : "Сначала дата"}
-                      </option>
-                      {(disabled ? ["10:00", "12:00", "15:00"] : slots).map(
-                        (t) => (
-                          <option key={t}>{t}</option>
-                        ),
-                      )}
+                      {c.services.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name} — от {money(s.price)}
+                        </option>
+                      ))}
                     </select>
                   </label>
-                </div>
-                {date && !disabled && !loading && !slots.length && (
-                  <p className="dt-form-note">
-                    Нет свободного времени на эту дату. Выберите другой день.
-                  </p>
-                )}
-                <div className="dt-form-grid">
-                  <label>
-                    Ваше имя
-                    <input
-                      name="name"
-                      autoComplete="name"
-                      required
-                      minLength={2}
-                      maxLength={100}
-                    />
-                  </label>
-                  <label>
-                    Телефон
-                    <input
-                      name="phone"
-                      autoComplete="tel"
-                      inputMode="tel"
-                      required
-                      placeholder="79991234567"
-                      maxLength={11}
-                      pattern="[78][0-9]{10}"
-                      onInput={(e) => {
-                        e.currentTarget.value = e.currentTarget.value
-                          .replace(/\D/g, "")
-                          .slice(0, 11);
-                      }}
-                    />
-                  </label>
-                </div>
-                <label>
-                  Автомобиль
-                  <input
-                    name="car"
-                    required
-                    maxLength={120}
-                    placeholder="Марка и модель"
-                  />
-                </label>
-                <label>
-                  Комментарий
-                  <textarea
-                    name="comment"
-                    maxLength={700}
-                    placeholder="Что важно учесть?"
-                  />
-                </label>
-                <input
-                  className="dt-trap"
-                  name="website"
-                  tabIndex={-1}
-                  autoComplete="off"
-                  aria-hidden="true"
-                />
-                <label className="dt-consent">
-                  <input type="checkbox" name="consent" required />
-                  Согласен на обработку имени, телефона и сведений об автомобиле
-                  для организации записи.
-                </label>
-                <details className="dt-legal">
-                  <summary>Условия обработки данных</summary>
-                  <p>
-                    {c.privacyText ||
-                      "В демонстрационном режиме данные не отправляются."}
-                  </p>
-                </details>
+                  <div className="dt-form-grid">
+                    <label>
+                      Дата
+                      <input
+                        required
+                        type="date"
+                        min={new Date().toLocaleDateString("en-CA", {
+                          timeZone: "Europe/Moscow",
+                        })}
+                        value={date}
+                        onChange={(e) => setDate(e.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Время
+                      <select
+                        required
+                        disabled={loading || !date}
+                        value={time}
+                        onChange={(e) => setTime(e.target.value)}
+                      >
+                        <option value="">
+                          {loading
+                            ? "Загрузка…"
+                            : date
+                              ? "Выберите время"
+                              : "Сначала дата"}
+                        </option>
+                        {(disabled ? ["10:00", "12:00", "15:00"] : slots).map(
+                          (t) => (
+                            <option key={t}>{t}</option>
+                          ),
+                        )}
+                      </select>
+                    </label>
+                  </div>
+                  {date && !disabled && !loading && !slots.length && (
+                    <p className="dt-form-note">
+                      Нет свободного времени на эту дату. Выберите другой день.
+                    </p>
+                  )}
+                  {!sandbox && (
+                    <>
+                      <div className="dt-form-grid">
+                        <label>
+                          Ваше имя
+                          <input
+                            name="name"
+                            autoComplete="name"
+                            required
+                            minLength={2}
+                            maxLength={100}
+                          />
+                        </label>
+                        <label>
+                          Телефон
+                          <input
+                            name="phone"
+                            autoComplete="tel"
+                            inputMode="tel"
+                            required
+                            placeholder="79991234567"
+                            maxLength={11}
+                            pattern="[78][0-9]{10}"
+                            onInput={(e) => {
+                              e.currentTarget.value = e.currentTarget.value
+                                .replace(/\D/g, "")
+                                .slice(0, 11);
+                            }}
+                          />
+                        </label>
+                      </div>
+                      <label>
+                        Автомобиль
+                        <input
+                          name="car"
+                          required
+                          maxLength={120}
+                          placeholder="Марка и модель"
+                        />
+                      </label>
+                      <label>
+                        Комментарий
+                        <textarea
+                          name="comment"
+                          maxLength={700}
+                          placeholder="Что важно учесть?"
+                        />
+                      </label>
+                      <input
+                        className="dt-trap"
+                        name="website"
+                        tabIndex={-1}
+                        autoComplete="off"
+                        aria-hidden="true"
+                      />
+                      <label className="dt-consent">
+                        <input type="checkbox" name="consent" required />
+                        Согласен на обработку имени, телефона и сведений об
+                        автомобиле для организации записи.
+                      </label>
+                      <details className="dt-legal">
+                        <summary>Условия обработки данных</summary>
+                        <p>
+                          {c.privacyText ||
+                            "В демонстрационном режиме данные не отправляются."}
+                        </p>
+                      </details>
+                    </>
+                  )}
                 </fieldset>
                 {error && (
                   <p className="dt-error" role="alert">
                     {error}
                   </p>
                 )}
-                {uncertain && <button type="button" className="dt-status-check" disabled={busy || checkingReceipt} onClick={() => void refreshReceipt()}>Проверить, сохранилась ли заявка</button>}
+                {uncertain && (
+                  <button
+                    type="button"
+                    className="dt-status-check"
+                    disabled={busy || checkingReceipt}
+                    onClick={() => void refreshReceipt()}
+                  >
+                    Проверить, сохранилась ли заявка
+                  </button>
+                )}
                 <button
                   className="dt-primary"
-                  disabled={busy || disabled || !time}
+                  disabled={
+                    busy || disabled || (!uncertain && (loading || !time))
+                  }
                 >
                   {busy
                     ? "Отправляем…"
                     : disabled
                       ? "Демонстрация записи"
-                      : uncertain ? "Повторить безопасно" : `Оставить заявку · от ${money(service?.price || 0)}`}
+                      : uncertain
+                        ? "Повторить безопасно"
+                        : sandbox
+                          ? "Создать тестовую заявку"
+                          : `Оставить заявку · от ${money(service?.price || 0)}`}
                   <ArrowUpRight size={18} />
                 </button>
               </form>

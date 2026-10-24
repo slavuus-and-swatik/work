@@ -12,12 +12,15 @@ export function db() {
   if (connection) return connection;
   mkdirSync(dataDirectory(), { recursive: true, mode: 0o700 });
   const candidate = new DatabaseSync(join(dataDirectory(), "studio.sqlite"));
-  try { candidate.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;
+  try {
+    candidate.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;
     CREATE TABLE IF NOT EXISTS detail_projects(id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE, data TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS detail_reviews(token TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES detail_projects(id), data TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS detail_sites(project_id TEXT PRIMARY KEY REFERENCES detail_projects(id), config TEXT NOT NULL, version INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS detail_bookings(id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES detail_projects(id), date TEXT NOT NULL, data TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS detail_booking_day ON detail_bookings(project_id,date);
+    CREATE TABLE IF NOT EXISTS detail_booking_events(id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES detail_projects(id), booking_id TEXT NOT NULL REFERENCES detail_bookings(id), data TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS detail_booking_events_lookup ON detail_booking_events(project_id,booking_id);
     CREATE TABLE IF NOT EXISTS detail_booking_receipts(project_id TEXT NOT NULL REFERENCES detail_projects(id), token_hash TEXT NOT NULL, payload_hash TEXT NOT NULL, booking_id TEXT NOT NULL REFERENCES detail_bookings(id), PRIMARY KEY(project_id,token_hash));
     CREATE TABLE IF NOT EXISTS detail_health(id INTEGER PRIMARY KEY CHECK(id=1), checked_at INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS detail_limits(key TEXT PRIMARY KEY, count INTEGER NOT NULL, until INTEGER NOT NULL);
@@ -25,7 +28,11 @@ export function db() {
     CREATE TABLE IF NOT EXISTS detail_client_access(project_id TEXT PRIMARY KEY REFERENCES detail_projects(id), password_hash TEXT, invite_hash TEXT, invite_expires INTEGER);
     CREATE TABLE IF NOT EXISTS detail_client_sessions(token_hash TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES detail_projects(id), expires INTEGER NOT NULL);
     CREATE INDEX IF NOT EXISTS detail_client_sessions_project ON detail_client_sessions(project_id);
-  `); } catch (error) { candidate.close(); throw error; }
+  `);
+  } catch (error) {
+    candidate.close();
+    throw error;
+  }
   connection = candidate;
   return connection;
 }

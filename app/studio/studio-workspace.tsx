@@ -1,4 +1,5 @@
 "use client";
+import BookingManager from "@/components/detailing/booking-manager";
 import {
   Children,
   cloneElement,
@@ -1090,50 +1091,7 @@ export default function StudioWorkspace() {
                         сайта.
                       </div>
                     )}
-                    {orders.map((b) => (
-                      <article key={b.id} className="ds-edit-card">
-                        <b>
-                          {b.date.split("-").reverse().join(".")} · {b.time}
-                        </b>
-                        <h3>{b.serviceName}</h3>
-                        <p>
-                          {b.name} · {b.car}
-                        </p>
-                        <a href={"tel:+" + b.phone}>+{b.phone}</a>
-                        <p>{b.comment}</p>
-                        <Field label="Статус">
-                          <select
-                            value={b.status}
-                            disabled={busy}
-                            onChange={(e) =>
-                              run(async () => {
-                                const v = await api(
-                                  `projects/${selected.id}/bookings`,
-                                  "PATCH",
-                                  { id: b.id, status: e.target.value },
-                                );
-                                setOrders((xs) =>
-                                  xs.map((x) =>
-                                    x.id === b.id ? v.booking : x,
-                                  ),
-                                );
-                              })
-                            }
-                          >
-                            {[
-                              ["pending", "Ожидает подтверждения"],
-                              ["confirmed", "Подтверждена"],
-                              ["completed", "Выполнена"],
-                              ["cancelled", "Отменена"],
-                            ].map(([k, l]) => (
-                              <option key={k} value={k}>
-                                {l}
-                              </option>
-                            ))}
-                          </select>
-                        </Field>
-                      </article>
-                    ))}
+                    <BookingManager bookings={orders} projectId={selected.id} onChange={b=>setOrders(xs=>xs.map(x=>x.id===b.id?b:x))} onRefresh={async()=>setOrders((await api(`projects/${selected.id}/bookings`)).bookings)}/>
                   </>
                 )}
               </div>

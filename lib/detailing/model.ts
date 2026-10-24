@@ -105,7 +105,42 @@ export type DetailBooking = {
   comment: string;
   status: "pending" | "confirmed" | "cancelled" | "completed";
   createdAt: string;
+  version?: number;
+  updatedAt?: string;
+  staffNote?: string;
+  sandbox?: boolean;
 };
+export type BookingEvent = {
+  id: string;
+  at: string;
+  actor: "visitor" | "agency" | "client";
+  action: "created" | "status" | "reschedule" | "note";
+  from?: { date: string; time: string; status: string };
+  to: { date: string; time: string; status: string };
+  note?: string;
+};
+const mutationBase = {
+  id: z.string().min(1).max(80),
+  version: z.number().int().positive().optional(),
+};
+export const bookingMutationSchema = z.preprocess(
+  (v) => (typeof v === "object" && v !== null ? { action: "status", ...v } : v),
+  z.discriminatedUnion("action", [
+    z.object({
+      ...mutationBase,
+      action: z.literal("status"),
+      status: z.enum(["pending", "confirmed", "cancelled", "completed"]),
+    }),
+    z.object({
+      ...mutationBase,
+      action: z.literal("reschedule"),
+      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      time: z.string().regex(/^\d{2}:\d{2}$/),
+    }),
+    z.object({ ...mutationBase, action: z.literal("note"), note: text(1500) }),
+  ]),
+);
+export type BookingMutation = z.infer<typeof bookingMutationSchema>;
 export const defaultDetailConfig: DetailConfig = {
   name: "FORMA",
   eyebrow: "ДЕТЕЙЛИНГ · ЗАЩИТА · ЭСТЕТИКА",
@@ -206,7 +241,10 @@ export const projectInputSchema = z.object({
     .default([]),
 });
 export const bookingInputSchema = z.object({
-  submissionToken: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  submissionToken: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
   serviceId: text(50),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   time: z.string().regex(/^\d{2}:\d{2}$/),

@@ -1,0 +1,152 @@
+.bm {
+  color: #e5ecfa;
+}
+.bm-filters,
+.bm-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.bm-filters label {
+  flex: 1;
+  min-width: 120px;
+}
+.bm label {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  color: #a5b4cc;
+}
+.bm select,
+.bm input,
+.bm textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #ffffff20;
+  border-radius: 12px;
+  background: #0c1423;
+  color: #e5ecfa;
+  padding: 10px;
+  font: inherit;
+}
+.bm-card {
+  margin: 14px 0;
+  padding: 18px;
+  border: 1px solid #ffffff18;
+  border-radius: 20px;
+  background: linear-gradient(145deg, #162239c9, #0b111ee6);
+  box-shadow: 0 8px 28px #0002;
+}
+.bm h3 {
+  font-size: 18px;
+  margin: 12px 0;
+}
+.bm p {
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.bm a {
+  color: #98bdff;
+}
+.bm button {
+  font: inherit;
+  font-size: 12px;
+  padding: 10px 13px;
+  border-radius: 12px;
+  border: 1px solid #ffffff24;
+  background: #203456;
+  color: #f0f5ff;
+  cursor: pointer;
+  transition:
+    background 0.2s,
+    transform 0.2s;
+}
+.bm button:hover {
+  background: #2d4c7c;
+}
+.bm button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.bm button:focus-visible,
+.bm summary:focus-visible {
+  outline: 2px solid #80aaff;
+  outline-offset: 3px;
+}
+.bm-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.bm-meta small,
+.bm-muted,
+.bm-event small {
+  color: #91a0b7;
+}
+.bm-badge {
+  border-radius: 30px;
+  background: #ffffff0c;
+  padding: 5px 9px;
+  font-size: 11px;
+}
+.bm-pending {
+  background: #d49b2220;
+  color: #efd08a;
+}
+.bm-confirmed {
+  background: #528cff20;
+  color: #a8c8ff;
+}
+.bm-completed {
+  background: #3fad9b20;
+  color: #9ce2cd;
+}
+.bm-cancelled {
+  color: #a7b1c3;
+}
+.bm details {
+  border-top: 1px solid #ffffff10;
+  margin-top: 14px;
+  padding-top: 12px;
+}
+.bm summary {
+  cursor: pointer;
+  font-size: 13px;
+}
+.bm textarea {
+  min-height: 85px;
+  margin: 12px 0;
+}
+.bm-editor {
+  padding-top: 16px;
+  display: grid;
+  gap: 10px;
+}
+.bm-event {
+  border-left: 2px solid #405b86;
+  padding-left: 10px;
+}
+.bm-error {
+  color: #ffacac;
+}
+.bm details[open] {
+  animation: bm-enter 0.2s ease-out;
+}
+@keyframes bm-enter {
+  from {
+    opacity: 0.5;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bm * {
+    animation: none !important;
+    transition: none !important;
+  }
+}

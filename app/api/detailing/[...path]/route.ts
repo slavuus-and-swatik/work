@@ -3,6 +3,7 @@ import { z, ZodError } from "zod";
 import { isPlatformAdmin } from "@/lib/platform-auth";
 import { db, rateLimit } from "@/lib/detailing/db";
 import * as store from "@/lib/detailing/store";
+import { bookingMutationSchema } from "@/lib/detailing/model";
 import { saveUpload } from "@/lib/detailing/assets";
 
 export const runtime = "nodejs";
@@ -35,7 +36,8 @@ async function handle(req: Request, ctx: Context) {
     if (scope === "projects" || scope === "upload") {
       if (!isPlatformAdmin(req))
         return json({ error: "Войдите в студию" }, 401);
-      if (scope === "upload" && method === "POST") return json(await saveUpload(req, "agency", 120), 201);
+      if (scope === "upload" && method === "POST")
+        return json(await saveUpload(req, "agency", 120), 201);
       if (!id && method === "GET")
         return json({ projects: store.listProjects() });
       if (!id && method === "POST")
@@ -77,14 +79,29 @@ async function handle(req: Request, ctx: Context) {
         store.project(id);
         return json({ bookings: store.bookings(id) });
       }
+      if (id && action === "booking-slots" && method === "GET")
+        return json({
+          slots: store.rescheduleSlots(
+            id,
+            url.searchParams.get("bookingId") || "",
+            url.searchParams.get("date") || "",
+          ),
+        });
+      if (id && action === "booking-history" && method === "GET")
+        return json({
+          events: store.bookingHistory(
+            id,
+            url.searchParams.get("bookingId") || "",
+          ),
+        });
       if (id && action === "bookings" && method === "PATCH") {
-        const v = z
-          .object({
-            id: z.string(),
-            status: z.enum(["pending", "confirmed", "cancelled", "completed"]),
-          })
-          .parse(await body(req));
-        return json({ booking: store.changeBooking(id, v.id, v.status) });
+        return json({
+          booking: store.mutateBooking(
+            id,
+            bookingMutationSchema.parse(await body(req)),
+            "agency",
+          ),
+        });
       }
     }
     if (scope === "assets" && id && method === "GET") {
@@ -128,11 +145,16 @@ async function handle(req: Request, ctx: Context) {
           url.searchParams.get("date") || "",
         ),
       });
-    if (scope === "sites" && id && action === "bookings" && method === "POST") {
+    if (
+      scope === "sites" &&
+      id &&
+      (action === "bookings" || action === "demo-bookings") &&
+      method === "POST"
+    ) {
       const ip = createHash("sha256")
         .update(req.headers.get("x-real-ip") || "unknown")
         .digest("hex");
-      if (!rateLimit("booking:" + id + ":" + ip, 8, 3600))
+      if (!rateLimit(action + ":" + id + ":" + ip, 8, 3600))
         return json(
           {
             error:
@@ -140,7 +162,33 @@ async function handle(req: Request, ctx: Context) {
           },
           429,
         );
-      const booking = store.createBooking(id, await body(req));
+      const raw = await body(req);
+      const sandbox = action === "demo-bookings";
+      const schedule = sandbox
+        ? z
+            .object({
+              serviceId: z.string(),
+              date: z.string(),
+              time: z.string(),
+              submissionToken: z.string().regex(/^[a-f0-9]{64}$/),
+            })
+            .parse(raw)
+        : null;
+      const booking = store.createBooking(
+        id,
+        sandbox
+          ? {
+              ...schedule,
+              name: "Тестовая заявка",
+              phone: "70000000000",
+              car: "Демонстрационный автомобиль",
+              comment: "Тестовая запись — реальный визит не требуется",
+              consent: true,
+              website: "",
+            }
+          : raw,
+        sandbox,
+      );
       return json(
         {
           booking: store.publicBooking(booking),
@@ -149,10 +197,22 @@ async function handle(req: Request, ctx: Context) {
       );
     }
     if (scope === "sites" && id && action === "receipt" && method === "POST") {
-      const ip = createHash("sha256").update(req.headers.get("x-real-ip") || "unknown").digest("hex");
-      if (!rateLimit(`receipt:${ip}`, 60, 600)) return json({error: "Слишком много проверок. Попробуйте позже."}, 429);
-      const v = z.object({ submissionToken: z.string().regex(/^[a-f0-9]{64}$/) }).parse(await body(req));
-      return json({ booking: store.publicBooking(store.bookingReceipt(id, v.submissionToken)) });
+      const ip = createHash("sha256")
+        .update(req.headers.get("x-real-ip") || "unknown")
+        .digest("hex");
+      if (!rateLimit(`receipt:${ip}`, 60, 600))
+        return json(
+          { error: "Слишком много проверок. Попробуйте позже." },
+          429,
+        );
+      const v = z
+        .object({ submissionToken: z.string().regex(/^[a-f0-9]{64}$/) })
+        .parse(await body(req));
+      return json({
+        booking: store.publicBooking(
+          store.bookingReceipt(id, v.submissionToken),
+        ),
+      });
     }
     return json({ error: "Страница не найдена" }, 404);
   } catch (error) {
