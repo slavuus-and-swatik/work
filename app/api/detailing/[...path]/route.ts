@@ -1,8 +1,9 @@
-import { randomUUID, createHash } from "node:crypto";
+import { createHash } from "node:crypto";
 import { z, ZodError } from "zod";
 import { isPlatformAdmin } from "@/lib/platform-auth";
 import { db, rateLimit } from "@/lib/detailing/db";
 import * as store from "@/lib/detailing/store";
+import { saveUpload } from "@/lib/detailing/assets";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,35 +35,7 @@ async function handle(req: Request, ctx: Context) {
     if (scope === "projects" || scope === "upload") {
       if (!isPlatformAdmin(req))
         return json({ error: "Войдите в студию" }, 401);
-      if (scope === "upload" && method === "POST") {
-        if (Number(req.headers.get("content-length") || 0) > 6500000)
-          throw new store.DetailError(
-            "Фотография должна быть меньше 6 МБ",
-            413,
-          );
-        const form = await req.formData();
-        const file = form.get("file");
-        if (!(file instanceof File) || file.size > 6000000)
-          throw new store.DetailError("Выберите изображение до 6 МБ");
-        const buffer = Buffer.from(await file.arrayBuffer());
-        const type = buffer.subarray(0, 3).equals(Buffer.from([255, 216, 255]))
-          ? "image/jpeg"
-          : buffer
-                .subarray(0, 8)
-                .equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
-            ? "image/png"
-            : buffer.subarray(0, 4).toString() === "RIFF" &&
-                buffer.subarray(8, 12).toString() === "WEBP"
-              ? "image/webp"
-              : null;
-        if (!type)
-          throw new store.DetailError("Поддерживаются JPG, PNG и WebP");
-        const assetId = randomUUID();
-        db()
-          .prepare("INSERT INTO detail_assets VALUES(?,?,?)")
-          .run(assetId, type, buffer);
-        return json({ url: `/api/detailing/assets/${assetId}` }, 201);
-      }
+      if (scope === "upload" && method === "POST") return json(await saveUpload(req, "agency", 120), 201);
       if (!id && method === "GET")
         return json({ projects: store.listProjects() });
       if (!id && method === "POST")
@@ -170,16 +143,16 @@ async function handle(req: Request, ctx: Context) {
       const booking = store.createBooking(id, await body(req));
       return json(
         {
-          booking: {
-            id: booking.id,
-            date: booking.date,
-            time: booking.time,
-            serviceName: booking.serviceName,
-            status: booking.status,
-          },
+          booking: store.publicBooking(booking),
         },
         201,
       );
+    }
+    if (scope === "sites" && id && action === "receipt" && method === "POST") {
+      const ip = createHash("sha256").update(req.headers.get("x-real-ip") || "unknown").digest("hex");
+      if (!rateLimit(`receipt:${ip}`, 60, 600)) return json({error: "Слишком много проверок. Попробуйте позже."}, 429);
+      const v = z.object({ submissionToken: z.string().regex(/^[a-f0-9]{64}$/) }).parse(await body(req));
+      return json({ booking: store.publicBooking(store.bookingReceipt(id, v.submissionToken)) });
     }
     return json({ error: "Страница не найдена" }, 404);
   } catch (error) {

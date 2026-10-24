@@ -33,11 +33,12 @@ export function issueInvite(projectId: string) {
 }
 function session(req: Request, projectId: string) {
   const value = token();
+  db().prepare("DELETE FROM detail_client_sessions WHERE expires<=?").run(Date.now());
   db().prepare("INSERT INTO detail_client_sessions VALUES(?,?,?)").run(digest(value), projectId, Date.now() + SESSION_SECONDS * 1000);
   return `${COOKIE}=${value}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${SESSION_SECONDS}${secure(req)}`;
 }
 export async function acceptInvite(req: Request, slug: string, invite: unknown, password: unknown) {
-  if (typeof password !== "string" || password.length < 12 || password.length > 128) throw new DetailError("Пароль должен содержать 12–128 символов");
+  if (typeof password !== "string" || password.length < 12 || Buffer.byteLength(password, "utf8") > 72) throw new DetailError("Пароль должен содержать от 12 символов и занимать не более 72 байт UTF-8");
   if (typeof invite !== "string" || !/^[\w-]{40,50}$/.test(invite)) throw new DetailError("Ссылка приглашения недействительна", 400);
   const p = projectBySlug(slug);
   const row = access(p.id);
@@ -59,10 +60,10 @@ export function projectBySlug(slug: string) {
 }
 export async function loginClient(req: Request, slug: string, password: unknown) {
   const ip = req.headers.get("x-real-ip") || req.headers.get("x-forwarded-for")?.split(",")[0] || "unknown";
-  if (!rateLimit(`client-login:${slug}:${digest(ip)}`, 10, 3600)) throw new DetailError("Слишком много попыток. Попробуйте позже.", 429);
+  if (!rateLimit(`client-login-ip:${digest(ip)}`, 40, 3600) || !rateLimit(`client-login:${slug}:${digest(ip)}`, 10, 3600)) throw new DetailError("Слишком много попыток. Попробуйте позже.", 429);
   const p = projectBySlug(slug);
   const pass = access(p.id)?.password_hash;
-  if (!pass || typeof password !== "string" || !(await compare(password, pass))) throw new DetailError("Неверный пароль", 401);
+  if (!pass || typeof password !== "string" || Buffer.byteLength(password, "utf8") > 72 || !(await compare(password, pass))) throw new DetailError("Неверный пароль", 401);
   return session(req, p.id);
 }
 export function logoutClient(req: Request) {

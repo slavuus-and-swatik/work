@@ -1,0 +1,128 @@
+/* A shared layer for restrained motion and translucent surfaces. */
+.dt [id] { scroll-margin-top: 108px; }
+.dt .dt-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: #0b1422ee;
+  border-bottom-color: #b4d2ff24;
+  box-shadow: 0 10px 35px #00000014;
+}
+.dt .dt-header-cta,
+.dt .dt-primary,
+.dt .dt-dialog input,
+.dt .dt-dialog textarea,
+.dt .dt-dialog select { border-radius: 11px; }
+.dt .dt-primary,
+.dt .dt-header-cta,
+.dt .dt-service > button {
+  transition: transform .22s ease, background .22s ease, border-color .22s ease, box-shadow .22s ease;
+}
+.dt .dt-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 24px #5284d52b; }
+.dt .dt-primary:active,
+.dt .dt-header-cta:active { transform: translateY(0) scale(.98); }
+.dt .dt-service-list { border: 0; background: transparent; gap: 22px; }
+.dt .dt-service,
+.dt .dt-service:last-child {
+  border: 1px solid #b5d5ff22;
+  border-radius: 20px;
+  background: linear-gradient(140deg, #1c304951, #0d1726e8);
+  box-shadow: inset 0 1px 0 #e4f1ff08;
+  transition: transform .3s ease, border-color .3s ease, background .3s ease;
+}
+.dt .dt-service:hover { transform: translateY(-4px); border-color: #83adf056; }
+.dt .dt-service-image { border-radius: 12px; }
+.dt .dt-gallery-open { border-radius: 18px; overflow: hidden; }
+.dt .dt-gallery img { display: block; transition: transform .55s ease; }
+.dt .dt-gallery-open:hover img { transform: scale(1.035); }
+.dt .dt-dialog {
+  border-radius: 24px;
+  background: linear-gradient(145deg, #203149f2, #0b1728f7);
+  border-color: #a9cbff45;
+  box-shadow: inset 0 1px 0 #e4f1ff18, 0 25px 100px #0007;
+}
+.dt .dt-dialog[open] { animation: forma-dialog-in .24s cubic-bezier(.2,.8,.2,1) both; }
+.dt .dt-dialog::backdrop { animation: forma-fade-in .2s ease both; }
+.dt .dt-dialog fieldset { display: grid; gap: 15px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.dt .dt-dialog fieldset:disabled { opacity: .7; }
+.dt .dt-status-check { border: 1px solid #91b6ed66; border-radius: 11px; padding: 12px; color: #dbeaff; background: #ffffff08; }
+.dt .dt-receipt { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 16px 6%; border-bottom: 1px solid #8bafe33b; background: #13253b; font-size: 11px; }
+.dt .dt-receipt strong,
+.dt .dt-receipt span { display: block; }
+.dt .dt-receipt span { color: #adbed6; margin-top: 5px; }
+.dt .dt-receipt button { flex-shrink: 0; border: 1px solid #7fa3d453; background: #ffffff09; border-radius: 9px; padding: 10px 12px; font-size: 10px; }
+.dt[data-motion="on"] .dt-section { transition: opacity .65s ease, transform .65s cubic-bezier(.2,.7,.2,1); }
+.dt[data-motion="on"] .dt-section:not(.dt-visible) { opacity: 0; transform: translateY(22px); }
+.dt .dt-hero-copy { animation: forma-rise-in .75s cubic-bezier(.2,.7,.2,1) both; }
+.dt .dt-mobile-cta { border-radius: 18px 18px 0 0; box-shadow: 0 -10px 35px #0002; }
+
+.ds .ds-btn,
+.ds .ds-nav,
+.ds .ds-project-list > button,
+.ds .ds-inspector-tabs button,
+.ds .ds-upload { border-radius: 10px; }
+.ds input:not([type="checkbox"]):not([type="color"]):not([type="file"]),
+.ds.ds-workspace textarea,
+.ds.ds-workspace select { border-radius: 10px; transition: border-color .2s ease, box-shadow .2s ease; }
+.ds .ds-btn { transition: transform .2s ease, background .2s ease, border-color .2s ease; }
+.ds .ds-btn:not(:disabled):hover { transform: translateY(-1px); border-color: #8fb5ec; }
+.ds .ds-edit-card { border-radius: 16px; background: linear-gradient(140deg, #243b565e, #142338de); border-color: #9fc7ff28; }
+.ds .ds-image-preview,
+.ds .ds-canvas,
+.ds .ds-empty-preview { border-radius: 12px; }
+.ds .ds-modal { border-radius: 22px; box-shadow: 0 30px 100px #0007; }
+.ds .ds-toolbar,
+.ds .ds-canvas-toolbar,
+.ds .ds-review-bar { background: #111e30eb; border-color: #abcaff29; }
+.ds .ds-inspector { background: linear-gradient(155deg, #17263cec, #0d1829f5); }
+.ds .ds-inspector-body { animation: forma-rise-in .25s ease both; }
+.ds .ds-project-avatar { border-radius: 10px; }
+
+.dc .dc-primary,
+.dc .dc-secondary,
+.dc .dc-upload,
+.dc .dc-field input,
+.dc .dc-field textarea,
+.dc .dc-field select,
+.dc .dc-days button,
+.dc .dc-booking select { border-radius: 11px; }
+.dc .dc-primary,
+.dc .dc-secondary,
+.dc .dc-sidebar nav button { transition: transform .2s ease, background .2s ease, border-color .2s ease; }
+.dc .dc-primary:not(:disabled):hover,
+.dc .dc-secondary:not(:disabled):hover { transform: translateY(-2px); }
+.dc .dc-primary:not(:disabled):active { transform: scale(.98); }
+.dc .dc-sidebar nav button { border-radius: 11px; }
+.dc .dc-top { position: sticky; top: 0; z-index: 3; background: #0c1726ed; border-color: #a8cbff25; }
+.dc .dc-service-editor,
+.dc .dc-welcome,
+.dc .dc-stat-grid > div,
+.dc .dc-booking { border-radius: 20px; border-color: #99bcf02d; background: linear-gradient(135deg, #1c30477d, #101d2edb); box-shadow: inset 0 1px 0 #e2efff08; }
+.dc .dc-service-photo img,
+.dc .dc-photo-row img,
+.dc .dc-gallery-row img { border-radius: 12px; }
+.dc .dc-panel,
+.dc .dc-welcome { animation: forma-rise-in .3s ease both; }
+.dc .dc-field input:focus,
+.dc .dc-field textarea:focus { box-shadow: 0 0 0 3px #79a4f512; }
+
+@supports (backdrop-filter: blur(20px)) {
+  .dt .dt-header,
+  .dt .dt-dialog,
+  .dt .dt-mobile-cta,
+  .ds .ds-toolbar,
+  .ds .ds-review-bar,
+  .dc .dc-top { backdrop-filter: blur(22px) saturate(125%); -webkit-backdrop-filter: blur(22px) saturate(125%); }
+}
+@keyframes forma-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes forma-rise-in { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes forma-dialog-in { from { opacity: 0; transform: translateY(12px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@media (max-width: 650px) {
+  .dt .dt-receipt { align-items: flex-start; flex-direction: column; }
+  .dc .dc-top { position: relative; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dt *, .ds *, .dc * { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  .dt[data-motion="on"] .dt-section:not(.dt-visible) { opacity: 1; transform: none; }
+  .dt .dt-service:hover, .dt .dt-primary:hover, .dc .dc-primary:hover, .dc .dc-secondary:hover, .ds .ds-btn:hover { transform: none; }
+}

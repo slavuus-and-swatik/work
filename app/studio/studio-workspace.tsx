@@ -88,6 +88,8 @@ export default function StudioWorkspace() {
     [newName, setNewName] = useState(""),
     [slug, setSlug] = useState(""),
     [orders, setOrders] = useState<DetailBooking[]>([]),
+    [ordersError, setOrdersError] = useState(""),
+    [ordersUpdated, setOrdersUpdated] = useState(""),
     [inviteLink, setInviteLink] = useState("");
   const dirty =
     !!selected &&
@@ -181,10 +183,20 @@ export default function StudioWorkspace() {
     return () => window.removeEventListener("beforeunload", fn);
   }, [dirty]);
   useEffect(() => {
-    if (section === "bookings" && selected)
-      void run(async () =>
-        setOrders((await api(`projects/${selected.id}/bookings`)).bookings),
-      );
+    if (section !== "bookings" || !selected) return;
+    let current = true;
+    setOrdersError(""); setOrdersUpdated("");
+    const refresh = async () => {
+      if (document.hidden) return;
+      try {
+        const value = await api(`projects/${selected.id}/bookings`);
+        if (current) { setOrders(value.bookings); setOrdersError(""); setOrdersUpdated(new Date().toLocaleTimeString("ru-RU")); }
+      } catch { if (current) setOrdersError("Связь со студией потеряна. Список может быть устаревшим; повторите проверку."); }
+    };
+    void refresh();
+    const timer = window.setInterval(refresh, 15000);
+    window.addEventListener("focus", refresh);
+    return () => { current = false; window.clearInterval(timer); window.removeEventListener("focus", refresh); };
   }, [section, selected?.id]);
   function set<K extends keyof DetailConfig>(key: K, value: DetailConfig[K]) {
     setConfig((c) => ({ ...c, [key]: value }));
@@ -335,6 +347,7 @@ export default function StudioWorkspace() {
           <Layers3 size={17} />
           Проекты<span>{projects.length}</span>
         </button>
+        <a className="ds-nav" style={{ marginTop: 9 }} href="/studio/operations"><Settings2 size={17}/>Хранилище и копии</a>
         <div className="ds-sidebar-caption ds-projects-title">
           КЛИЕНТЫ
           <button aria-label="Новый проект" onClick={() => setCreating(true)}>
@@ -519,7 +532,7 @@ export default function StudioWorkspace() {
                   </button>
                 ))}
               </div>
-              <div className="ds-inspector-body">
+              <div className="ds-inspector-body" key={section}>
                 {section === "brand" && (
                   <>
                     <span className="ds-kicker">ШАБЛОН 01 / ДЕТЕЙЛИНГ</span>
@@ -1069,7 +1082,9 @@ export default function StudioWorkspace() {
                       Заявки только этого сайта. Время по Москве. Свяжитесь с
                       клиентом перед подтверждением.
                     </p>
-                    {!orders.length && (
+                    {ordersError && <p className="ds-error" role="alert">{ordersError}</p>}
+                    <p className="ds-hint">{ordersUpdated ? `Данные на ${ordersUpdated}. Автообновление каждые 15 секунд.` : "Проверяем список заявок…"}</p>
+                    {!orders.length && !ordersError && ordersUpdated && (
                       <div className="ds-edit-card">
                         Пока нет заявок. Они появятся после публикации рабочего
                         сайта.

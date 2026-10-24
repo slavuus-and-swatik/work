@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { db, transaction } from "./db";
 import {
   defaultDetailConfig,
@@ -333,6 +333,15 @@ export function createBooking(slug: string, input: unknown) {
   if (v.website) throw new DetailError("Не удалось отправить заявку");
   return transaction(() => {
     const site = liveSite(slug);
+    const tokenHash = v.submissionToken ? createHash("sha256").update(v.submissionToken).digest("hex") : null;
+    const payloadHash = createHash("sha256").update(JSON.stringify({ ...v, submissionToken: undefined, phone: "7" + v.phone.slice(1) })).digest("hex");
+    if (tokenHash) {
+      const existing = db().prepare("SELECT payload_hash,booking_id FROM detail_booking_receipts WHERE project_id=? AND token_hash=?").get(site.projectId, tokenHash) as {payload_hash: string; booking_id: string} | undefined;
+      if (existing) {
+        if (existing.payload_hash !== payloadHash) throw new DetailError("Эта отправка уже сохранена с другими данными. Проверьте её статус.", 409);
+        return decode<DetailBooking>(db().prepare("SELECT data FROM detail_bookings WHERE id=?").get(existing.booking_id))!;
+      }
+    }
     if (site.config.demo)
       throw new DetailError(
         "Это демонстрационный сайт. Приём заявок отключён.",
@@ -362,8 +371,20 @@ export function createBooking(slug: string, input: unknown) {
     db()
       .prepare("INSERT INTO detail_bookings VALUES(?,?,?,?)")
       .run(booking.id, site.projectId, booking.date, JSON.stringify(booking));
+    if (tokenHash) db().prepare("INSERT INTO detail_booking_receipts VALUES(?,?,?,?)").run(site.projectId, tokenHash, payloadHash, booking.id);
     return booking;
   });
+}
+export function bookingReceipt(slug: string, token: string) {
+  if (!/^[a-f0-9]{64}$/.test(token)) throw new DetailError("Некорректный номер проверки");
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+  const row = db().prepare("SELECT b.data FROM detail_booking_receipts r JOIN detail_projects p ON p.id=r.project_id JOIN detail_bookings b ON b.id=r.booking_id WHERE p.slug=? AND r.token_hash=?").get(slug, tokenHash);
+  const booking = decode<DetailBooking>(row);
+  if (!booking) throw new DetailError("Заявка пока не найдена", 404);
+  return booking;
+}
+export function publicBooking(booking: DetailBooking) {
+  return { id: booking.id, date: booking.date, time: booking.time, serviceName: booking.serviceName, status: booking.status };
 }
 export function changeBooking(
   projectId: string,

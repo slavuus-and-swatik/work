@@ -1,7 +1,6 @@
-import { randomUUID } from "node:crypto";
 import { ZodError, z } from "zod";
 import { isPlatformAdmin } from "@/lib/platform-auth";
-import { db } from "@/lib/detailing/db";
+import { saveUpload } from "@/lib/detailing/assets";
 import * as auth from "@/lib/detailing/client-auth";
 import * as store from "@/lib/detailing/store";
 
@@ -36,7 +35,7 @@ async function handle(req: Request) {
       const { projectId } = z.object({ projectId: z.string().uuid() }).parse(await input(req));
       const invite = auth.issueInvite(projectId);
       const p = store.project(projectId);
-      return json({ invite, path: `/client/${p.slug}?invite=${invite}` }, 201);
+      return json({ invite, path: `/client/${p.slug}#invite=${invite}` }, 201);
     }
     if (action === "activate" && req.method === "POST") {
       const { slug, invite, password } = z.object({ slug: z.string(), invite: z.string(), password: z.string() }).parse(await input(req));
@@ -73,17 +72,7 @@ async function handle(req: Request) {
       const v = z.object({ id: z.string(), status: z.enum(["pending", "confirmed", "cancelled", "completed"]) }).parse(await input(req));
       return json({ booking: store.changeBooking(id, v.id, v.status) });
     }
-    if (action === "upload" && req.method === "POST") {
-      if (Number(req.headers.get("content-length") || 0) > 6500000) throw new store.DetailError("Фотография должна быть меньше 6 МБ", 413);
-      const file = (await req.formData()).get("file");
-      if (!(file instanceof File) || file.size > 6000000) throw new store.DetailError("Выберите изображение до 6 МБ");
-      const buffer = Buffer.from(await file.arrayBuffer());
-      const type = buffer.subarray(0, 3).equals(Buffer.from([255, 216, 255])) ? "image/jpeg" : buffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) ? "image/png" : buffer.subarray(0, 4).toString() === "RIFF" && buffer.subarray(8, 12).toString() === "WEBP" ? "image/webp" : null;
-      if (!type) throw new store.DetailError("Поддерживаются JPG, PNG и WebP");
-      const assetId = randomUUID();
-      db().prepare("INSERT INTO detail_assets VALUES(?,?,?)").run(assetId, type, buffer);
-      return json({ url: `/api/detailing/assets/${assetId}` }, 201);
-    }
+    if (action === "upload" && req.method === "POST") return json(await saveUpload(req, id, 30), 201);
     return json({ error: "Страница не найдена" }, 404);
   } catch (error) {
     if (error instanceof store.DetailError) return json({ error: error.message }, error.status);

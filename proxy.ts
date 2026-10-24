@@ -12,6 +12,8 @@ export function proxy(request: NextRequest) {
     path.startsWith('/review/') ||
     path.startsWith('/client/') ||
     path === '/api/client' ||
+    path === '/api/health' ||
+    path === '/api/operations' ||
     path.startsWith('/s/') ||
     path.startsWith('/api/detailing/') ||
     path === '/api/platform-admin/session' ||
@@ -25,6 +27,9 @@ export function proxy(request: NextRequest) {
     response.headers.set('X-Content-Type-Options', 'nosniff');
     response.headers.set('Referrer-Policy', 'no-referrer');
     response.headers.set('X-Frame-Options', 'SAMEORIGIN');
+    response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    response.headers.set('Content-Security-Policy', "frame-ancestors 'self'; object-src 'none'; base-uri 'self'; form-action 'self'");
+    if (request.nextUrl.protocol === 'https:') response.headers.set('Strict-Transport-Security', 'max-age=31536000');
     return response;
   }
 

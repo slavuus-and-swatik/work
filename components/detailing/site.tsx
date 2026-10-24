@@ -20,6 +20,9 @@ import { money, type DetailConfig } from "@/lib/detailing/model";
 import { PhotoProvider, PhotoView } from "react-photo-view";
 import "react-photo-view/dist/react-photo-view.css";
 import "./site.css";
+import "./effects.css";
+type Receipt = { id: string; serviceName: string; date: string; time: string; status: string };
+const receiptStatus: Record<string, string> = { pending: "Ожидает подтверждения", confirmed: "Запись подтверждена", completed: "Визит завершён", cancelled: "Запись отменена" };
 
 export default function DetailingSite({
   config: c,
@@ -40,9 +43,59 @@ export default function DetailingSite({
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [privacy, setPrivacy] = useState(false);
+  const [receipt, setReceipt] = useState<Receipt | null>(null);
+  const [receiptNote, setReceiptNote] = useState("");
+  const [checkingReceipt, setCheckingReceipt] = useState(false);
+  const [uncertain, setUncertain] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  const lastToken = useRef("");
+  const submission = useRef<{ token: string; payload: Record<string, unknown> } | null>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const service = c.services.find((s) => s.id === selected);
   const disabled = preview || c.demo || !slug;
+  async function readReceipt(token: string) {
+    const response = await fetch(`/api/detailing/sites/${slug}/receipt`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ submissionToken: token }), signal: AbortSignal.timeout(10000) });
+    if (response.status === 404) return null;
+    const value = await response.json();
+    if (!response.ok) throw new Error(value.error || "Статус временно недоступен");
+    return value.booking as Receipt;
+  }
+  function complete(booking: Receipt) {
+    setReceipt(booking);
+    setUncertain(false);
+    submission.current = null;
+    setSuccess(`${receiptStatus[booking.status] || booking.status}. ${booking.serviceName}, ${booking.date.split("-").reverse().join(".")} в ${booking.time} (МСК). Номер: ${booking.id.slice(0, 8).toUpperCase()}. Заявка сохранена в студии; администратор свяжется с вами.`);
+    setReceiptNote("");
+  }
+  async function refreshReceipt() {
+    if (!lastToken.current || checkingReceipt) return;
+    setCheckingReceipt(true);
+    try {
+      const value = await readReceipt(lastToken.current);
+      if (value) { setReceipt(value); setReceiptNote(""); if (uncertain) complete(value); }
+      else setReceiptNote("Сохранение пока не подтверждено. Повторите проверку или отправку: повторная отправка защищена от дубликатов.");
+    } catch { setReceiptNote("Не удалось связаться со студией. Статус пока неизвестен — проверьте ещё раз или позвоните."); }
+    finally { setCheckingReceipt(false); }
+  }
+  useEffect(() => {
+    if (disabled) return;
+    try {
+      const stored = JSON.parse(localStorage.getItem(`forma-receipt:${slug}`) || "null");
+      if (stored && /^[a-f0-9]{64}$/.test(stored.token) && Date.now() - stored.createdAt < 7 * 86400000) {
+        lastToken.current = stored.token;
+        setReceiptNote("Проверяем последнюю заявку…");
+        void readReceipt(stored.token).then((value) => { setReceipt(value); setReceiptNote(value ? "" : "Последняя отправка пока не найдена. Проверьте статус перед новой записью."); }).catch(() => setReceiptNote("Статус последней заявки пока недоступен. Проверьте его повторно."));
+      }
+    } catch { /* Storage is optional; the request still works in private mode. */ }
+  }, [slug, disabled]);
+  useEffect(() => {
+    const element = root.current;
+    if (!element || !window.IntersectionObserver || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const observer = new IntersectionObserver((entries) => entries.forEach((entry) => { if (entry.isIntersecting) { entry.target.classList.add("dt-visible"); observer.unobserve(entry.target); } }), { threshold: 0.04 });
+    element.querySelectorAll(".dt-section").forEach((section) => observer.observe(section));
+    element.dataset.motion = "on";
+    return () => { observer.disconnect(); delete element.dataset.motion; };
+  }, [c.gallery.length, c.faqs.length]);
   useEffect(() => {
     if (selected) dialog.current?.showModal();
     else dialog.current?.close();
@@ -77,6 +130,12 @@ export default function DetailingSite({
   function open(id?: string) {
     setSuccess("");
     setError("");
+    if (uncertain && submission.current) {
+      setError("Результат предыдущей отправки пока неизвестен. Проверьте статус или повторите ту же заявку безопасно.");
+      setSelected(String(submission.current.payload.serviceId));
+      setMenu(false);
+      return;
+    }
     setDate("");
     setTime("");
     setSelected(id || c.services[0].id);
@@ -84,39 +143,51 @@ export default function DetailingSite({
   }
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (disabled) return;
+    if (disabled || busy) return;
     setBusy(true);
     setError("");
     const f = new FormData(e.currentTarget);
+    let pending = submission.current;
+    if (!pending) {
+      const token = lastToken.current && !receipt ? lastToken.current : Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, "0")).join("");
+      pending = { token, payload: {
+        serviceId: selected, date, time, name: f.get("name"), phone: String(f.get("phone")).replace(/\D/g, ""), car: f.get("car"), comment: f.get("comment"), consent: f.get("consent") === "on", website: f.get("website"), submissionToken: token,
+      } };
+      submission.current = pending;
+      lastToken.current = token;
+      setReceipt(null);
+      try { localStorage.setItem(`forma-receipt:${slug}`, JSON.stringify({ token, createdAt: Date.now() })); } catch {}
+    }
     try {
       const r = await fetch(`/api/detailing/sites/${slug}/bookings`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          serviceId: selected,
-          date,
-          time,
-          name: f.get("name"),
-          phone: String(f.get("phone")).replace(/\D/g, ""),
-          car: f.get("car"),
-          comment: f.get("comment"),
-          consent: f.get("consent") === "on",
-          website: f.get("website"),
-        }),
+        body: JSON.stringify(pending.payload),
+        signal: AbortSignal.timeout(15000),
       });
       const v = await r.json();
-      if (!r.ok) throw new Error(v.error);
-      setSuccess(
-        `Заявка принята: ${v.booking.serviceName}, ${v.booking.date.split("-").reverse().join(".")} в ${v.booking.time} (МСК). Администратор свяжется с вами для подтверждения. Номер: ${v.booking.id.slice(0, 8).toUpperCase()}.`,
-      );
+      if (!r.ok) {
+        const saved = await readReceipt(pending.token);
+        if (saved) { complete(saved); return; }
+        if (r.status >= 400 && r.status < 500) {
+          submission.current = null; lastToken.current = ""; setUncertain(false);
+          try { localStorage.removeItem(`forma-receipt:${slug}`); } catch {}
+          setError(v.error || "Проверьте данные заявки");
+          return;
+        }
+        throw new Error("Сервер временно недоступен");
+      }
+      complete(v.booking);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Не удалось отправить заявку");
+      try { const saved = await readReceipt(pending.token); if (saved) { complete(saved); return; } } catch {}
+      setUncertain(true);
+      setError("Ответ студии не получен. Заявка могла сохраниться. Проверьте статус или повторите отправку — дубликат не появится.");
     } finally {
       setBusy(false);
     }
   }
   return (
-    <div className="dt" style={{ "--dt-accent": c.accent } as CSSProperties}>
+    <div ref={root} className="dt" style={{ "--dt-accent": c.accent } as CSSProperties}>
       {c.demo && !preview && (
         <div className="dt-demo">
           Демонстрационный сайт · название, цены и изображения приведены для
@@ -164,6 +235,7 @@ export default function DetailingSite({
           <Menu size={22} />
         </button>
       </header>
+      {!disabled && (receipt || receiptNote) && <div className="dt-receipt" role="status"><div><strong>{receipt ? `${receiptStatus[receipt.status]} · ${receipt.serviceName}` : "Последняя заявка"}</strong><span>{receipt ? `${receipt.date.split("-").reverse().join(".")} · ${receipt.time} МСК · № ${receipt.id.slice(0, 8).toUpperCase()}` : receiptNote}</span>{receipt && receiptNote && <span>{receiptNote}</span>}</div><button disabled={checkingReceipt} onClick={() => void refreshReceipt()}>{checkingReceipt ? "Проверяем…" : "Обновить статус"}</button></div>}
       <main>
         <section className="dt-hero" id="top">
           <img
@@ -408,6 +480,7 @@ export default function DetailingSite({
                   : "Время указано по Москве. Подтверждение и итоговая стоимость — после связи с администратором."}
               </p>
               <form onSubmit={submit}>
+                <fieldset disabled={busy || uncertain}>
                 <label>
                   Услуга
                   <select
@@ -526,11 +599,13 @@ export default function DetailingSite({
                       "В демонстрационном режиме данные не отправляются."}
                   </p>
                 </details>
+                </fieldset>
                 {error && (
                   <p className="dt-error" role="alert">
                     {error}
                   </p>
                 )}
+                {uncertain && <button type="button" className="dt-status-check" disabled={busy || checkingReceipt} onClick={() => void refreshReceipt()}>Проверить, сохранилась ли заявка</button>}
                 <button
                   className="dt-primary"
                   disabled={busy || disabled || !time}
@@ -539,7 +614,7 @@ export default function DetailingSite({
                     ? "Отправляем…"
                     : disabled
                       ? "Демонстрация записи"
-                      : `Оставить заявку · от ${money(service?.price || 0)}`}
+                      : uncertain ? "Повторить безопасно" : `Оставить заявку · от ${money(service?.price || 0)}`}
                   <ArrowUpRight size={18} />
                 </button>
               </form>

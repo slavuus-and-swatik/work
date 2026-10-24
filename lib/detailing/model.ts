@@ -206,6 +206,7 @@ export const projectInputSchema = z.object({
     .default([]),
 });
 export const bookingInputSchema = z.object({
+  submissionToken: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   serviceId: text(50),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   time: z.string().regex(/^\d{2}:\d{2}$/),
