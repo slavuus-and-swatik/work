@@ -16,7 +16,7 @@ function secureEqual(a: string, b: string) {
   const left = Buffer.from(a); const right = Buffer.from(b);
   return left.length === right.length && timingSafeEqual(left, right);
 }
-function clientIp(request: Request) {
+export function clientIp(request: Request) {
   return request.headers.get('x-real-ip')?.trim() || request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
 }
 function attemptKeys(request: Request, device: string) {
@@ -63,8 +63,7 @@ export function verifyAdminSession(request: Request) {
 }
 
 export async function authenticateAdmin(request: Request, password: unknown) {
-  const encodedHash = process.env.ADMIN_PASSWORD_HASH_B64 || '';
-  const configuredHash = encodedHash ? Buffer.from(encodedHash, 'base64').toString('utf8') : '';
+  const configuredHash = process.env.ADMIN_PASSWORD_HASH || '';
   const deviceCookie = cookie(request, DEVICE_COOKIE);
   const keys = attemptKeys(request, deviceCookie);
   const now = Date.now();
@@ -76,14 +75,17 @@ export async function authenticateAdmin(request: Request, password: unknown) {
     const state = attempts.get(key);
     if (state?.blockedUntil && state.blockedUntil <= now) attempts.delete(key);
   }
-  const ok = typeof password === 'string' && password.length === 32 && await compare(password, configuredHash).catch(() => false);
+  const validPassword = typeof password === 'string' && /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{32}$/.test(password);
+  const ok = validPassword && await compare(password, configuredHash).catch(() => false);
   if (ok) {
     keys.forEach((key) => attempts.delete(key));
     return { ok: true as const };
   }
   const count = Math.max(...keys.map((key) => attempts.get(key)?.count || 0)) + 1;
   for (const key of keys) attempts.set(key, count >= 3 ? { count, blockedUntil: now + LOCK_SECONDS } : { count });
-  return count >= 3 ? { ok: false as const, blockedForSeconds: LOCK_SECONDS } : { ok: false as const, attemptsLeft: 3 - count };
+  return count >= 3
+    ? { ok: false as const, blockedForSeconds: LOCK_SECONDS, lockTriggered: true as const, failedAttempts: count }
+    : { ok: false as const, attemptsLeft: 3 - count };
 }
 
 export function isTrustedAdmin(request: Request) {

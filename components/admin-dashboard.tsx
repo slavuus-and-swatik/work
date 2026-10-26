@@ -64,6 +64,12 @@ function parseDeliveryTiers(value: string) {
   return value.split('\n').map((line) => line.split(':').map(Number)).filter(([from, amount]) => Number.isFinite(from) && from > 0 && Number.isFinite(amount) && amount >= 0).map(([from, amount]) => ({ from, amount }));
 }
 
+function isIntegerNumberField(target: EventTarget | null): target is HTMLInputElement {
+  if (!(target instanceof HTMLInputElement) || target.type !== 'number') return false;
+  const step = target.step || '1';
+  return step !== 'any' && Number(step) >= 1;
+}
+
 type Tab =
   | 'overview'
   | 'presets'
@@ -149,6 +155,8 @@ export default function AdminDashboard({ onExit, initialTab = 'overview', onConf
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState('');
   const [hasChanges, setHasChanges] = useState(false);
+  const [activePresetKey, setActivePresetKey] = useState<PresetKey>(getActiveConfig().niche);
+  const [previewPresetKey, setPreviewPresetKey] = useState<PresetKey | null>(null);
 
   // Admin access is verified by the server session endpoint.
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -213,10 +221,11 @@ export default function AdminDashboard({ onExit, initialTab = 'overview', onConf
       try {
         const cfgRes = await fetch('/api/config?draft=1');
         if (cfgRes.ok) {
-          const d = (await cfgRes.json()) as { config?: Config };
+          const d = (await cfgRes.json()) as { config?: Config; activePresetKey?: PresetKey };
           if (d?.config && !ignore) {
             setConfig(d.config);
             if (d.config.adminMode) setRole(d.config.adminMode);
+            if (d.activePresetKey) setActivePresetKey(d.activePresetKey);
           }
         }
       } catch (e) {
@@ -384,10 +393,8 @@ export default function AdminDashboard({ onExit, initialTab = 'overview', onConf
     const nextConfig = structuredClone(chosen);
     // preserve current admin mode
     nextConfig.adminMode = role;
-    setConfig(nextConfig);
-    onConfigChange?.(nextConfig);
     setSaving(true);
-    setNotice(`Применяем нишу «${chosen.nicheLabel}»...`);
+    setNotice(`Публикуем вариант «${chosen.nicheLabel}»...`);
 
     try {
       const r = await fetch('/api/config', {
@@ -395,12 +402,18 @@ export default function AdminDashboard({ onExit, initialTab = 'overview', onConf
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ config: nextConfig, publish: true }),
       });
-      if (r.ok) {
-        setNotice(`Ниша «${chosen.nicheLabel}» успешно активирована и опубликована на сайте!`);
-        setHasChanges(false);
+      if (!r.ok) {
+        const result = await r.json().catch(() => ({})) as { error?: string };
+        throw new Error(result.error || 'Не удалось опубликовать вариант сайта');
       }
-    } catch {
-      setNotice(`Ниша активирована.`);
+      setConfig(nextConfig);
+      setActivePresetKey(key);
+      setPreviewPresetKey(null);
+      onConfigChange?.(nextConfig);
+      setNotice(`Вариант «${chosen.nicheLabel}» опубликован для посетителей сайта.`);
+      setHasChanges(false);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Не удалось опубликовать вариант сайта. Текущий вариант оставлен без изменений.');
     } finally {
       setSaving(false);
     }
@@ -436,14 +449,16 @@ export default function AdminDashboard({ onExit, initialTab = 'overview', onConf
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus, paymentStatus: payStatus, rejectionReason }),
       });
-      if (r.ok) {
-        setOrders((prev) =>
-          prev.map((o) => (o.id === id ? { ...o, status: newStatus as Order['status'], paymentStatus: (payStatus || o.paymentStatus) as Order['paymentStatus'], rejectionReason } : o))
-        );
-        setNotice(`Статус заказа ${id} обновлен на «${newStatus}»`);
+      if (!r.ok) {
+        const result = await r.json().catch(() => ({})) as { error?: string };
+        throw new Error(result.error || 'Ошибка обновления статуса заказа');
       }
-    } catch {
-      setNotice('Ошибка обновления статуса заказа');
+      setOrders((prev) =>
+        prev.map((o) => (o.id === id ? { ...o, status: newStatus as Order['status'], paymentStatus: (payStatus || o.paymentStatus) as Order['paymentStatus'], rejectionReason } : o))
+      );
+      setNotice(`Статус заказа ${id} обновлен на «${newStatus}»`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Ошибка обновления статуса заказа');
     }
   }
 
@@ -633,7 +648,25 @@ export default function AdminDashboard({ onExit, initialTab = 'overview', onConf
   }
 
   return (
-    <div className="admin">
+    <div
+      className="admin"
+      onKeyDownCapture={(event) => {
+        if (isIntegerNumberField(event.target) && event.key.length === 1 && /\D/.test(event.key) && !event.ctrlKey && !event.metaKey) event.preventDefault();
+      }}
+      onBeforeInputCapture={(event) => {
+        const text = (event.nativeEvent as InputEvent).data;
+        if (isIntegerNumberField(event.target) && text && /\D/.test(text)) event.preventDefault();
+      }}
+      onChangeCapture={(event) => {
+        if (isIntegerNumberField(event.target) && /\D/.test(event.target.value)) event.target.value = event.target.value.replace(/\D/g, '');
+      }}
+      onPasteCapture={(event) => {
+        if (isIntegerNumberField(event.target) && /\D/.test(event.clipboardData.getData('text'))) event.preventDefault();
+      }}
+      onDropCapture={(event) => {
+        if (isIntegerNumberField(event.target)) event.preventDefault();
+      }}
+    >
       {/* Desktop Sidebar */}
       <aside className="admin-sidebar">
         <div className="admin-brand">
@@ -996,7 +1029,7 @@ export default function AdminDashboard({ onExit, initialTab = 'overview', onConf
 
               <div className="presets-grid">
                 {presetList.map((p) => {
-                  const isCurrent = config.niche === p.key;
+                  const isCurrent = activePresetKey === p.key;
                   return (
                     <div key={p.key} className={`preset-card ${isCurrent ? 'active' : ''}`}>
                       <div>
@@ -1018,15 +1051,28 @@ export default function AdminDashboard({ onExit, initialTab = 'overview', onConf
                           type="button"
                           className={isCurrent ? 'admin-secondary' : 'admin-primary'}
                           style={{ width: '100%', justifyContent: 'center' }}
-                          onClick={() => applyPreset(p.key)}
+                          onClick={() => setPreviewPresetKey(p.key)}
                         >
-                          {isCurrent ? '✓ Активный шаблон' : 'Выбрать этот шаблон →'}
+                          {isCurrent ? '✓ Активный вариант · просмотр' : 'Предпросмотр варианта →'}
                         </button>
                       </div>
                     </div>
                   );
                 })}
               </div>
+
+              {previewPresetKey && <section className={`preset-live-preview theme-${presets[previewPresetKey].theme || 'navy'}`} aria-label="Предпросмотр варианта сайта">
+                <div className="preset-live-preview-heading">
+                  <div><span>ПРЕДПРОСМОТР · {presets[previewPresetKey].nicheLabel}</span><h3>{presets[previewPresetKey].name}</h3></div>
+                  <button type="button" className="admin-secondary" onClick={() => setPreviewPresetKey(null)}>Закрыть</button>
+                </div>
+                <div className="preset-live-hero" style={{ backgroundImage: `linear-gradient(90deg,rgba(3,7,18,.84),rgba(3,7,18,.16)),url('${presets[previewPresetKey].heroUrl}')` }}>
+                  <span>{presets[previewPresetKey].nicheLabel}</span><strong>{presets[previewPresetKey].tagline}</strong>
+                </div>
+                <p>{presets[previewPresetKey].aboutText}</p>
+                <div className="preset-live-preview-grid">{presets[previewPresetKey].products.slice(0, 3).map((product) => <article key={product.id}><img src={product.imageUrl} alt="" /><strong>{product.name}</strong><span>{money(product.price)}</span></article>)}</div>
+                <div className="preset-live-preview-footer"><span>Блоки: {presets[previewPresetKey].products.length} товаров · {presets[previewPresetKey].services.length} услуг · контакты и доставка</span><button type="button" className="admin-primary" disabled={saving} onClick={() => applyPreset(previewPresetKey)}>{saving ? 'Публикуем…' : 'Применить вариант ко всему сайту'}</button></div>
+              </section>}
             </div>
           )}
 
@@ -1192,6 +1238,14 @@ export default function AdminDashboard({ onExit, initialTab = 'overview', onConf
                         <label>Тип товара<input value={p.productType || p.category || ''} maxLength={80} onChange={(e) => updateProduct(p.id, { productType: e.target.value })} placeholder="Одежда, электроника…" /></label>
                         <label>Характеристики (одна строка: название: значение)<textarea value={(p.attributes || []).map((item) => `${item.label}: ${item.value}`).join('\n')} onChange={(e) => updateProduct(p.id, { attributes: e.target.value.split('\n').map((row) => { const split = row.indexOf(':'); return split < 0 ? null : { label: row.slice(0, split).trim(), value: row.slice(split + 1).trim() }; }).filter((item): item is { label: string; value: string } => Boolean(item?.label && item.value)) })} placeholder={'Размер: M, L, XL\nМатериал: хлопок'} rows={4} /></label>
                         <label>Дополнительные фото — URL, по одному на строку<textarea value={(p.galleryImages || []).join('\n')} onChange={(e) => updateProduct(p.id, { galleryImages: [...new Set(e.target.value.split('\n').map((url) => url.trim()).filter((url) => /^https:\/\//i.test(url)))].slice(0, 12) })} placeholder="https://…" rows={4} /></label>
+                        <label>Остаток на складе (пусто — без ограничения)<input type="number" min="0" step="1" value={p.stockQuantity ?? ''} onChange={(e) => updateProduct(p.id, { stockQuantity: e.target.value === '' ? undefined : Number(e.target.value) })} /></label>
+                        <label>Популярность (для сортировки)<input type="number" min="0" step="1" value={p.popularity ?? ''} onChange={(e) => updateProduct(p.id, { popularity: e.target.value === '' ? undefined : Number(e.target.value) })} /></label>
+                        <label>Дата поступления<input type="date" value={p.createdAt?.slice(0, 10) || ''} onChange={(e) => updateProduct(p.id, { createdAt: e.target.value ? new Date(`${e.target.value}T12:00:00Z`).toISOString() : undefined })} /></label>
+                        <label>Преимущества (по одному на строку)<textarea value={(p.details?.advantages || []).join('\n')} onChange={(e) => updateProduct(p.id, { details: { ...p.details, advantages: e.target.value.split('\n').map((line) => line.trim()).filter(Boolean).slice(0, 30) } })} rows={3} /></label>
+                        <label>Комплектация (по одному на строку)<textarea value={(p.details?.included || []).join('\n')} onChange={(e) => updateProduct(p.id, { details: { ...p.details, included: e.target.value.split('\n').map((line) => line.trim()).filter(Boolean).slice(0, 30) } })} rows={3} /></label>
+                        <label>Гарантия<input maxLength={500} value={p.details?.warranty || ''} onChange={(e) => updateProduct(p.id, { details: { ...p.details, warranty: e.target.value } })} /></label>
+                        <label>Условия доставки<input maxLength={500} value={p.details?.delivery || ''} onChange={(e) => updateProduct(p.id, { details: { ...p.details, delivery: e.target.value } })} /></label>
+                        <label>Условия возврата<input maxLength={500} value={p.details?.returns || ''} onChange={(e) => updateProduct(p.id, { details: { ...p.details, returns: e.target.value } })} /></label>
                         <label>Вес, кг<input type="number" min="0" max="1000" step="0.1" value={p.weightKg ?? ''} onChange={(e) => updateProduct(p.id, { weightKg: e.target.value ? Number(e.target.value) : undefined })} /></label>
                         <label>Класс доставки<select value={p.shippingClass || 'standard'} onChange={(e) => updateProduct(p.id, { shippingClass: e.target.value as Product['shippingClass'] })}><option value="standard">Обычный</option><option value="bulky">Крупногабаритный</option><option value="fragile">Хрупкий</option></select></label>
                       </div>
@@ -1626,7 +1680,12 @@ export default function AdminDashboard({ onExit, initialTab = 'overview', onConf
                   <input
                     type="text"
                     value={config.phone}
-                    onChange={(e) => updateField('phone', e.target.value)}
+                    inputMode="numeric"
+                    maxLength={11}
+                    onChange={(e) => updateField('phone', e.target.value.replace(/\D/g, '').slice(0, 11))}
+                    onBeforeInput={(e) => { const text = (e.nativeEvent as InputEvent).data; if (text && /\D/.test(text)) e.preventDefault(); }}
+                    onPaste={(e) => { e.preventDefault(); updateField('phone', e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 11)); }}
+                    onDrop={(e) => e.preventDefault()}
                     style={{ width: '100%', height: '44px', background: '#0b0e14', border: '1px solid #262f42', borderRadius: '10px', color: '#fff', padding: '0 12px' }}
                   />
                 </div>
@@ -1658,7 +1717,12 @@ export default function AdminDashboard({ onExit, initialTab = 'overview', onConf
                     type="text"
                     value={config.whatsapp || ''}
                     placeholder="+79990001122"
-                    onChange={(e) => updateField('whatsapp', e.target.value)}
+                    inputMode="numeric"
+                    maxLength={11}
+                    onChange={(e) => updateField('whatsapp', e.target.value.replace(/\D/g, '').slice(0, 11))}
+                    onBeforeInput={(e) => { const text = (e.nativeEvent as InputEvent).data; if (text && /\D/.test(text)) e.preventDefault(); }}
+                    onPaste={(e) => { e.preventDefault(); updateField('whatsapp', e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 11)); }}
+                    onDrop={(e) => e.preventDefault()}
                     style={{ width: '100%', height: '44px', background: '#0b0e14', border: '1px solid #262f42', borderRadius: '10px', color: '#fff', padding: '0 12px' }}
                   />
                 </div>
@@ -1797,12 +1861,17 @@ export default function AdminDashboard({ onExit, initialTab = 'overview', onConf
                           type="text"
                           placeholder="+7 (999) 000-00-00"
                           value={config.paymentMethods?.sbpPhone || config.phone || ''}
+                          inputMode="numeric"
+                          maxLength={11}
                           onChange={(e) =>
                             updateField('paymentMethods', {
                               ...(config.paymentMethods || { onlineCard: true, sbpOnline: true, cashOnDelivery: true, cardTransfer: true }),
-                              sbpPhone: e.target.value,
+                              sbpPhone: e.target.value.replace(/\D/g, '').slice(0, 11),
                             })
                           }
+                          onBeforeInput={(e) => { const text = (e.nativeEvent as InputEvent).data; if (text && /\D/.test(text)) e.preventDefault(); }}
+                          onPaste={(e) => { e.preventDefault(); updateField('paymentMethods', { ...(config.paymentMethods || { onlineCard: true, sbpOnline: true, cashOnDelivery: true, cardTransfer: true }), sbpPhone: e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 11) }); }}
+                          onDrop={(e) => e.preventDefault()}
                           style={{ width: '100%', height: '38px', background: '#141822', border: '1px solid #262f42', borderRadius: '8px', color: '#fff', padding: '0 10px', fontSize: '13px', boxSizing: 'border-box' }}
                         />
                       </div>

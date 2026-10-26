@@ -1,5 +1,8 @@
 import { admin, config, database, json, localIso, tenantSlug, timeMinutes, validDate } from '@/lib/server';
 import { duration, priceFor } from '@/lib/shinslot';
+import { normalizeRussianPhone } from '@/lib/commerce';
+import { readJson, JsonRequestError } from '@/lib/read-json';
+
 
 export async function GET(request: Request) {
   if (!await admin(request)) return json({ error: 'Нет доступа' }, 403);
@@ -13,23 +16,33 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const b = (await request.json()) as Record<string, unknown>;
+  let parsed: unknown;
+  try { parsed = await readJson<unknown>(request, 16 * 1024); }
+  catch (error) {
+    if (error instanceof JsonRequestError) return json({ error: error.message }, error.status);
+    return json({ error: 'Некорректный запрос записи' }, 400);
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return json({ error: 'Некорректный запрос записи' }, 400);
+  const b = parsed as Record<string, unknown>;
   const c = await config();
   const service = c.services.find((x) => x.id === b.serviceId && x.enabled);
   const date = String(b.date || '');
   const time = String(b.time || '');
   const size = b.wheelSize ? Number(b.wheelSize) : 0;
+  const hasWheelSize = b.wheelSize !== undefined && b.wheelSize !== null && String(b.wheelSize) !== '';
   const name = String(b.name || '').trim();
-  const phone = String(b.phone || '').trim();
+  const phone = normalizeRussianPhone(String(b.phone || ''));
   const vehicleType = String(b.vehicleType || '');
 
   if (
     !service ||
     !validDate(date) ||
     !/^\d{2}:\d{2}$/.test(time) ||
+    (hasWheelSize && (!Number.isSafeInteger(size) || size < 10 || size > 30)) ||
     name.length < 2 ||
     name.length > 80 ||
-    !/^\+?[\d\s()-]{10,22}$/.test(phone)
+    !/^[\p{L} -]+$/u.test(name) ||
+    !phone
   ) {
     return json({ error: 'Проверьте данные записи' }, 400);
   }

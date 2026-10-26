@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
-import { authenticateAdmin, clearAdminCookies, issueAdminCookies, issueDeviceCookie, isTrustedAdmin } from '@/lib/admin-auth';
+import { authenticateAdmin, clearAdminCookies, clientIp, issueAdminCookies, issueDeviceCookie, isTrustedAdmin } from '@/lib/admin-auth';
 import { json } from '@/lib/server';
+import { readJson, JsonRequestError } from '@/lib/read-json';
+
+import { sendAdminTelegramAlert } from '@/lib/notifications';
 
 export async function GET(request: Request) {
   const trusted = isTrustedAdmin(request);
@@ -8,11 +11,24 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  let body: { password?: unknown };
-  try { body = await request.json(); } catch { return json({ error: 'Некорректный запрос' }, 400); }
-  const result = await authenticateAdmin(request, body.password);
+  let body: unknown;
+  try { body = await readJson<unknown>(request, 4 * 1024); }
+  catch (error) {
+    if (error instanceof JsonRequestError) return json({ error: error.message }, error.status);
+    return json({ error: 'Некорректный запрос' }, 400);
+  }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return json({ error: 'Некорректный запрос' }, 400);
+  const result = await authenticateAdmin(request, (body as { password?: unknown }).password);
   if (!result.ok) {
     if ('configurationMissing' in result) return json({ error: 'Админ-вход не настроен: задайте AUTH_SECRET и ADMIN_PASSWORD_HASH' }, 503);
+    if ('lockTriggered' in result) {
+      const blockedAt = new Date().toISOString();
+      try {
+        await sendAdminTelegramAlert(`⚠️ Блокировка входа в админку\nВремя: ${blockedAt}\nIP: ${clientIp(request)}\nНеверных попыток: ${result.failedAttempts}\nБлокировка: 1 час`);
+      } catch {
+        console.warn('[admin-security] Failed to send Telegram lock alert');
+      }
+    }
     const response = NextResponse.json('blockedForSeconds' in result ? { error: 'Вход временно заблокирован', blockedForSeconds: result.blockedForSeconds } : { error: 'Неверный пароль', attemptsLeft: result.attemptsLeft }, { status: 'blockedForSeconds' in result ? 429 : 401, headers: { 'Cache-Control': 'no-store' } });
     if (!request.headers.get('cookie')?.includes('store_admin_device=')) response.headers.append('Set-Cookie', issueDeviceCookie(request));
     return response;

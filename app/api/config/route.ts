@@ -1,29 +1,48 @@
 import { admin, config, database, json, tenant, tenantSlug } from '@/lib/server';
 import { defaultConfig, type Config } from '@/lib/shinslot';
+import { normalizeRussianPhone } from '@/lib/commerce';
+import { readJson, JsonRequestError } from '@/lib/read-json';
+
 
 export async function GET(request: Request) {
   const draft = new URL(request.url).searchParams.get('draft') === '1';
   if (draft && !(await admin(request))) return json({ error: 'Требуется вход в админку' }, 403);
   const isAdmin = Boolean(await admin(request));
   const current = await config(!draft);
+  const publishedConfig = draft ? await config(true) : current;
   const safeConfig = isAdmin ? current : {
     ...current,
     paymentMethods: { ...current.paymentMethods, yookassaSecretKey: undefined, tbankTerminalKey: undefined },
   };
-  return json({ config: safeConfig, isAdmin });
+  return json({ config: safeConfig, isAdmin, activePresetKey: publishedConfig.niche });
 }
 
 export async function PUT(request: Request) {
   const id = await admin(request);
   if (!id) return json({ error: 'Требуется вход в админку' }, 403);
-  const body = (await request.json()) as { config?: Config; publish?: boolean };
+  let parsed: unknown;
+  try { parsed = await readJson<unknown>(request, 2 * 1024 * 1024); }
+  catch (error) {
+    if (error instanceof JsonRequestError) return json({ error: error.message }, error.status);
+    return json({ error: 'Некорректный запрос настроек' }, 400);
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return json({ error: 'Некорректный запрос настроек' }, 400);
+  const body = parsed as { config?: Config; publish?: boolean };
   const c = body.config;
-  if (!c || typeof c.name !== 'string' || c.name.length > 120 || !Array.isArray(c.services) || c.services.length > 300 || !Array.isArray(c.products) || c.products.length > 500 || !Number.isInteger(c.posts) || c.posts < 1 || c.posts > 20 || !Number.isFinite(c.deliveryCost) || c.deliveryCost < 0 || c.deliveryCost > 1_000_000) {
+  if (!c || typeof c.name !== 'string' || c.name.length > 120 || !Array.isArray(c.services) || c.services.length > 300 || !Array.isArray(c.products) || c.products.length > 500 || !Number.isInteger(c.posts) || c.posts < 1 || c.posts > 20 || !Number.isSafeInteger(c.deliveryCost) || c.deliveryCost < 0 || c.deliveryCost > 1_000_000) {
     return json({ error: 'Проверьте настройки' }, 400);
   }
+  const serviceIds = new Set<string>();
+  for (const service of c.services) {
+    if (!service || typeof service.id !== 'string' || !/^[\w-]{1,80}$/.test(service.id) || serviceIds.has(service.id) || typeof service.name !== 'string' || !service.name.trim() || service.name.length > 180 || typeof service.description !== 'string' || service.description.length > 10000 || !Number.isSafeInteger(service.price) || service.price < 0 || service.price > 1_000_000_000 || !Number.isSafeInteger(service.duration) || service.duration < 1 || service.duration > 1440 || typeof service.enabled !== 'boolean' || (service.inspection !== undefined && typeof service.inspection !== 'boolean') || (service.category !== undefined && (typeof service.category !== 'string' || service.category.length > 120)) || (service.icon !== undefined && (typeof service.icon !== 'string' || service.icon.length > 80))) {
+      return json({ error: 'Invalid service settings' }, 400);
+    }
+    serviceIds.add(service.id);
+  }
   const productIds = new Set<string>();
+  const validTextList = (value: unknown) => Array.isArray(value) && value.length <= 30 && value.every((line) => typeof line === 'string' && line.trim().length > 0 && line.length <= 500);
   for (const product of c.products) {
-    if (!product || typeof product.id !== 'string' || !/^[\w-]{1,80}$/.test(product.id) || productIds.has(product.id) || typeof product.name !== 'string' || product.name.trim().length < 1 || product.name.length > 180 || typeof product.description !== 'string' || product.description.length > 10000 || !Number.isFinite(product.price) || product.price < 0 || product.price > 1_000_000_000 || typeof product.enabled !== 'boolean' || typeof product.inStock !== 'boolean' || !Array.isArray(product.galleryImages || []) || (product.galleryImages || []).length > 12 || !Array.isArray(product.attributes || []) || (product.attributes || []).length > 100 || (product.productType !== undefined && (typeof product.productType !== 'string' || product.productType.length > 80)) || (product.shippingClass !== undefined && !['standard', 'bulky', 'fragile'].includes(product.shippingClass))) {
+    if (!product || typeof product.id !== 'string' || !/^[\w-]{1,80}$/.test(product.id) || productIds.has(product.id) || typeof product.name !== 'string' || product.name.trim().length < 1 || product.name.length > 180 || typeof product.description !== 'string' || product.description.length > 10000 || !Number.isSafeInteger(product.price) || product.price < 0 || product.price > 1_000_000_000 || (product.oldPrice !== undefined && (!Number.isSafeInteger(product.oldPrice) || product.oldPrice < 0 || product.oldPrice > 1_000_000_000)) || typeof product.enabled !== 'boolean' || typeof product.inStock !== 'boolean' || !Array.isArray(product.galleryImages || []) || (product.galleryImages || []).length > 12 || !Array.isArray(product.attributes || []) || (product.attributes || []).length > 100 || (product.productType !== undefined && (typeof product.productType !== 'string' || product.productType.length > 80)) || (product.stockQuantity !== undefined && (!Number.isSafeInteger(product.stockQuantity) || product.stockQuantity < 0 || product.stockQuantity > 1_000_000)) || (product.popularity !== undefined && (!Number.isSafeInteger(product.popularity) || product.popularity < 0 || product.popularity > 1_000_000_000)) || (product.createdAt !== undefined && (typeof product.createdAt !== 'string' || product.createdAt.length > 40 || Number.isNaN(Date.parse(product.createdAt)))) || (product.details !== undefined && (!product.details || !validTextList(product.details.advantages || []) || !validTextList(product.details.included || []) || ['warranty', 'delivery', 'returns'].some((key) => product.details?.[key as 'warranty' | 'delivery' | 'returns'] !== undefined && (typeof product.details[key as 'warranty' | 'delivery' | 'returns'] !== 'string' || product.details[key as 'warranty' | 'delivery' | 'returns']!.length > 500)))) || (product.shippingClass !== undefined && !['standard', 'bulky', 'fragile'].includes(product.shippingClass))) {
       return json({ error: 'Проверьте название, цену и характеристики товаров' }, 400);
     }
     productIds.add(product.id);
@@ -34,11 +53,14 @@ export async function PUT(request: Request) {
   if (c.promoCode && (typeof c.promoCode.code !== 'string' || c.promoCode.code.length > 80 || !Number.isFinite(c.promoCode.discountPercent) || c.promoCode.discountPercent < 1 || c.promoCode.discountPercent > 100)) return json({ error: 'Проверьте настройки промокода' }, 400);
   if (c.deliveryPricing) {
     const p = c.deliveryPricing;
-    const validTiers = (tiers: unknown) => Array.isArray(tiers) && tiers.length <= 20 && tiers.every((tier) => tier && Number.isFinite(tier.from) && tier.from > 0 && Number.isFinite(tier.amount) && tier.amount >= 0 && tier.amount <= 1_000_000);
-    if (!Number.isFinite(p.freeAtSubtotal) || p.freeAtSubtotal < 0 || p.freeAtSubtotal > 1_000_000_000 || !validTiers(p.countDiscounts) || !validTiers(p.subtotalDiscounts) || !Number.isFinite(p.weightRatePerKg) || p.weightRatePerKg < 0 || p.weightRatePerKg > 1_000_000 || Object.values(p.classSurcharges || {}).some((amount) => !Number.isFinite(amount) || amount < 0 || amount > 1_000_000)) return json({ error: 'Проверьте параметры расчёта доставки' }, 400);
+    const validTiers = (tiers: unknown) => Array.isArray(tiers) && tiers.length <= 20 && tiers.every((tier) => tier && Number.isSafeInteger(tier.from) && tier.from > 0 && Number.isSafeInteger(tier.amount) && tier.amount >= 0 && tier.amount <= 1_000_000);
+    if (!Number.isSafeInteger(p.freeAtSubtotal) || p.freeAtSubtotal < 0 || p.freeAtSubtotal > 1_000_000_000 || !validTiers(p.countDiscounts) || !validTiers(p.subtotalDiscounts) || !Number.isFinite(p.weightRatePerKg) || p.weightRatePerKg < 0 || p.weightRatePerKg > 1_000_000 || Object.values(p.classSurcharges || {}).some((amount) => !Number.isSafeInteger(amount) || amount < 0 || amount > 1_000_000)) return json({ error: 'Проверьте параметры расчёта доставки' }, 400);
   }
   if (c.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c.email)) {
     return json({ error: 'Проверьте адрес почты' }, 400);
+  }
+  if (!normalizeRussianPhone(c.phone) || (c.whatsapp && !normalizeRussianPhone(c.whatsapp)) || (c.paymentMethods?.sbpPhone && !normalizeRussianPhone(c.paymentMethods.sbpPhone))) {
+    return json({ error: 'Проверьте российский номер телефона: нужно 10 или 11 цифр' }, 400);
   }
   const now = new Date().toISOString();
   const row = await tenant();

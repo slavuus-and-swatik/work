@@ -28,7 +28,8 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# Local secrets and environment values.
+.env
 .env*
 !.env.example
 
