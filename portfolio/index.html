@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Портфолио Андрея: VECTOR, FORMA, сайты записи, Telegram-боты, прокси и облачные инструменты.">
+  <meta name="theme-color" content="#f4f3ee">
+  <title>Андрей — сайты, боты и сервисы</title>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a class="skip" href="#projects">Перейти к проектам</a>
+  <header class="header wrap">
+    <a class="identity" href="#top">Андрей<span>Веб-разработка и автоматизация</span></a>
+    <nav aria-label="Навигация"><a href="#projects">Работы</a><a href="#engineering">Сервисы и боты</a><a class="contact-link" href="https://t.me/andrey_larp">Обсудить проект <svg aria-hidden="true"><use href="#arrow"/></svg></a></nav>
+  </header>
+  <main id="top">
+    <section class="intro wrap" aria-labelledby="title">
+      <h1 id="title">Сайты, боты<br>и сервисы.</h1>
+      <div class="intro-note"><p>От первого экрана<br>до работающего продукта.</p><p class="muted">Лендинги, онлайн-запись, Telegram<br>и инструменты для управления инфраструктурой.</p><a class="text-link" href="#projects">Посмотреть работы <svg aria-hidden="true"><use href="#down"/></svg></a></div>
+    </section>
+    <section id="projects" class="projects wrap" aria-label="Избранные работы">
+      <article class="project project-vector">
+        <a class="project-image" href="https://vector-club-orbit.flowylyric64.chatgpt.site" aria-label="Открыть лендинг VECTOR"><img src="assets/vector-desktop.png" alt="VECTOR: чёрный лендинг с крупной типографикой и знаком клуба" width="1440" height="900" fetchpriority="high"></a>
+        <div class="project-caption"><h2>VECTOR</h2><span>Лендинг закрытого клуба</span><a href="https://vector-club-orbit.flowylyric64.chatgpt.site" aria-label="Смотреть VECTOR"><svg aria-hidden="true"><use href="#arrow"/></svg></a></div>
+        <p>Выразительная типографика, анимация знака и раскрывающиеся карточки программы. Адаптивная статическая сборка с поддержкой reduced motion.</p>
+        <p class="stack">HTML / CSS / JavaScript / GSAP</p>
+      </article>
+      <article class="project project-forma">
+        <a class="project-image" href="https://forma.154-86-119-94.sslip.io/p/test" aria-label="Открыть демонстрацию FORMA"><img src="assets/forma-desktop.png" alt="FORMA: сайт детейлинга с фотографией Bentley в студии Galleria Car Spa и кнопкой онлайн-записи" width="1280" height="720" fetchpriority="high"></a>
+        <div class="project-caption"><h2>FORMA</h2><span>Сайт и онлайн-запись для детейлинга</span><a href="https://forma.154-86-119-94.sslip.io/p/test" aria-label="Смотреть FORMA"><svg aria-hidden="true"><use href="#arrow"/></svg></a></div>
+        <p>Фотографическая витрина, выбор услуги и времени, кабинет заявок и уведомления. Один шаблон адаптируется под разные студии.</p>
+        <p class="stack">Next.js / React / TypeScript / SQLite</p>
+        <p class="footnote">Демонстрационный проект. Фото Tima Miroshnichenko из Galleria Car Spa и Zac Nielson; <a href="sources.html">источники</a>. Не заказ этой студии.</p>
+      </article>
+    </section>
+    <section id="engineering" class="engineering wrap" aria-labelledby="engineering-title">
+      <div class="section-heading"><h2 id="engineering-title">За интерфейсом —<br>работающая логика.</h2><p class="muted">Ещё пять проектов и технических работ.<br>Раскройте строку, чтобы узнать детали.</p></div>
+      <details open><summary><span>VEXORA IP Roller</span><span class="summary-description">Облачные IP и фоновые задания</span><svg aria-hidden="true"><use href="#plus"/></svg></summary><div class="detail-body"><div><p>Панель управления облачными аккаунтами: правила IP/CIDR, лимиты, сохранённые профили, журнал событий, Telegram и внешний probe.</p><p class="stack">React / FastAPI / PostgreSQL / Celery / Redis</p><p class="footnote">Доступна локальная демосреда. Работа на реальных облачных аккаунтах не подтверждена.</p><a class="text-link" href="cases/ip-roller.html">Описание проекта <svg aria-hidden="true"><use href="#arrow"/></svg></a></div><img class="engineering-image" src="assets/ip-roller-desktop.jpg" alt="Демосреда IP Roller: параметры задания, события и история попыток; тестовые IP из документационных диапазонов" width="1440" height="1357" loading="lazy"></div></details>
+      <details><summary><span>VEXORA Proxy</span><span class="summary-description">Telegram-сервис подписок</span><svg aria-hidden="true"><use href="#plus"/></svg></summary><div class="detail-body text-only"><p>Пробный и платный доступ к прокси, покупки, баланс, продления, административные команды. Интеграции платежей, восстановление незавершённых операций и SQLite на постоянном томе.</p><p class="stack">Python / Telegram Bot API / SQLite / Railway</p><a class="text-link" href="cases/proxy.html">Описание проекта <svg aria-hidden="true"><use href="#arrow"/></svg></a></div></details>
+      <details><summary><span>VPN-инфраструктура</span><span class="summary-description">Интеграции и сопровождение</span><svg aria-hidden="true"><use href="#plus"/></svg></summary><div class="detail-body text-only"><p>Диагностика VPN-сервиса на Remnawave/Xray: маршрутизация, конфигурация, доступность узлов, подписки и восстановление. Отдельное направление эксплуатационных работ.</p><p class="stack">Linux / Remnawave / Xray / Python</p><a class="text-link" href="cases/vpn.html">Объём работ <svg aria-hidden="true"><use href="#arrow"/></svg></a></div></details>
+      <details><summary><span>VECTOR Content Bot</span><span class="summary-description">Подборки и контент в Telegram</span><svg aria-hidden="true"><use href="#plus"/></svg></summary><div class="detail-body text-only"><p>Поиск референсов в Pinterest, подборки, избранное и история без повторов. Сохранение исходных ссылок, доставка медиа и ограничение доступа.</p><p class="stack">Python / Telegram Bot API / SQLite / ffmpeg / Docker</p><p class="footnote">Сервис для разрешённых пользователей. Автопубликация в TikTok и Threads не подключена.</p><a class="text-link" href="cases/content-bot.html">Описание проекта <svg aria-hidden="true"><use href="#arrow"/></svg></a></div></details>
+      <details><summary><span>ШинСлот</span><span class="summary-description">Онлайн-запись на шиномонтаж</span><svg aria-hidden="true"><use href="#plus"/></svg></summary><div class="detail-body text-only"><p>Расчёт стоимости по параметрам автомобиля, запись в четыре шага, свободные слоты с учётом постов и длительности. Панель владельца с календарём, прайсом и расписанием.</p><p class="stack">React / Vinext / Cloudflare Workers / D1</p><p class="footnote">Рабочий прототип одной демонстрационной точки.</p><a class="text-link" href="https://github.com/slavuus-and-swatik/shinslot-booking">Исходный код на GitHub <svg aria-hidden="true"><use href="#arrow"/></svg></a></div></details>
+    </section>
+    <section class="reference-project wrap" aria-labelledby="reference-title"><h2 id="reference-title">Из открытых проектов rollce</h2><div><h3>DialogSpyBot</h3><p>Зеркало сообщений Telegram Business: архив, история правок и удалений, веб-просмотр переписки. Go / PostgreSQL / Docker.</p><p class="footnote">Автор исходного проекта — rollce. Участие Андрея пока не подтверждено; проект показан отдельно.</p><a class="text-link" href="cases/telegram-mirror.html">Посмотреть описание <svg aria-hidden="true"><use href="#arrow"/></svg></a><a class="text-link" href="https://github.com/rollce/DialogSpyBot">Исходник rollce <svg aria-hidden="true"><use href="#arrow"/></svg></a></div></section>
+    <section class="closing wrap" aria-labelledby="contact-title"><h2 id="contact-title">Есть задача?<br>Давайте обсудим.</h2><div><p>Расскажите, что нужно сделать:<br>сайт, бот или отдельный инструмент.</p><a class="button" href="https://t.me/andrey_larp">Написать в Telegram <svg aria-hidden="true"><use href="#arrow"/></svg></a></div></section>
+  </main>
+  <footer class="wrap footer"><span>Андрей · 2026</span><a href="https://github.com/slavuus-and-swatik/work#readme">Портфолио в Markdown</a><a href="sources.html">Источники изображений</a></footer>
+  <svg class="symbols" xmlns="http://www.w3.org/2000/svg"><symbol id="arrow" viewBox="0 0 24 24"><path d="M5 19 19 5M5 5h14v14"/></symbol><symbol id="down" viewBox="0 0 24 24"><path d="M12 4v16m-7-7 7 7 7-7"/></symbol><symbol id="plus" viewBox="0 0 24 24"><path d="M12 4v16M4 12h16"/></symbol></svg>
+</body>
+</html>
